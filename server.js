@@ -13,6 +13,13 @@ app.use(express.json({ limit: '4mb' }));
 
 // ── Partition table path ──────────────────────────────────────
 const PARTITIONS_DIR = join(__dirname, 'partitions');
+console.log(`📁 Partitions directory: ${PARTITIONS_DIR}`);
+try {
+  const partitionFiles = readdirSync(PARTITIONS_DIR).filter(f => f.endsWith('.csv'));
+  console.log(`✓ Available partition schemes: ${partitionFiles.join(', ')}`);
+} catch (e) {
+  console.error('⚠️  Warning: Could not read partitions directory:', e.message);
+}
 
 // ── Sync bundled libraries into persistent disk on startup ─────
 // The persistent disk mounts at /root/Arduino and would overwrite
@@ -137,13 +144,28 @@ app.post('/compile', auth, async (req, res) => {
     productId,
     version = '1.0.0',
     libraries = [],      // ← user-specified extra libraries
-    partitionScheme = 'min_spiffs',  // ← Minimal SPIFFS (1.9MB APP with OTA/128KB SPIFFS)
+    partitionScheme,                   // ← will default below
     partitionsCsv,                   // ← optional custom partition CSV
-    flashMode = 'qio',               // ← QIO (Quad I/O) for maximum performance
+    flashMode,                       // ← will default below
     flashFreq = '80m',
     flashSize = '4MB',
     eraseFlash = true                // ← default to true to ensure clean flash
   } = req.body;
+
+  // Apply defaults with normalization for UI compatibility
+  if (!partitionScheme) {
+    partitionScheme = 'min_spiffs';  // Default: Minimal SPIFFS
+  } else {
+    // Normalize: trim whitespace and convert to lowercase
+    partitionScheme = partitionScheme.toString().trim().toLowerCase();
+  }
+  
+  if (!flashMode) {
+    flashMode = 'qio';  // Default: QIO for max performance
+  } else {
+    // Normalize flash mode
+    flashMode = flashMode.toString().trim().toLowerCase();
+  }
 
   if (!source || !productId) {
     return res.status(400).json({ error: 'source and productId are required' });
@@ -190,23 +212,38 @@ app.post('/compile', auth, async (req, res) => {
     // Determine partition table to use
     let partitionTablePath;
     
+    console.log(`🔍 Received partitionScheme: "${partitionScheme}"`);
+    
     if (partitionsCsv) {
       // Use custom partition CSV provided by user
       partitionTablePath = `${sketchDir}/partitions.csv`;
       writeFileSync(partitionTablePath, partitionsCsv);
-      console.log(`Using custom partition table at ${partitionTablePath}`);
+      console.log(`✓ Using custom partition table (${partitionsCsv.length} bytes)`);
     } else {
       // Use built-in partition scheme
       const partitionFileName = `${partitionScheme}.csv`;
       partitionTablePath = join(PARTITIONS_DIR, partitionFileName);
       
+      console.log(`📄 Looking for partition file: ${partitionFileName}`);
+      console.log(`📍 Full path: ${partitionTablePath}`);
+      
       if (!existsSync(partitionTablePath)) {
+        // List available files to help debug
+        let availableFiles = [];
+        try {
+          availableFiles = readdirSync(PARTITIONS_DIR).filter(f => f.endsWith('.csv'));
+        } catch (e) {}
+        
+        console.error(`❌ Partition file not found: ${partitionFileName}`);
+        console.error(`📋 Available files: ${availableFiles.join(', ')}`);
+        
         cleanup(sketchDir);
         return res.status(400).json({ 
-          error: `Partition scheme "${partitionScheme}" not found. Available schemes: min_spiffs, default, huge_app, no_ota` 
+          error: `Partition scheme "${partitionScheme}" not found. Available schemes: min_spiffs, default, huge_app, no_ota`,
+          details: `Looked for: ${partitionFileName} at ${partitionTablePath}`
         });
       }
-      console.log(`Using partition scheme: ${partitionScheme} (${partitionTablePath})`);
+      console.log(`✓ Using partition scheme: ${partitionScheme} (${partitionTablePath})`);
     }
 
     const buildExtraFlags = [
