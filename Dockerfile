@@ -12,8 +12,10 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs
 
 # ── Install arduino-cli ────────────────────────────────────────
-RUN curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh \
-    | BINDIR=/usr/local/bin sh
+RUN curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh -o /tmp/install.sh && \
+    chmod +x /tmp/install.sh && \
+    BINDIR=/usr/local/bin sh /tmp/install.sh && \
+    rm /tmp/install.sh
 
 # ── Configure arduino-cli (add ESP32 board manager URL) ───────
 RUN arduino-cli config init && \
