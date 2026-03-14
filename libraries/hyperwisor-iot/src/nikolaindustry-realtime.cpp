@@ -20,7 +20,7 @@ void nikolaindustryrealtime::connect()
 {
   Serial.println("🔄 Connecting to nikolaindustry-realtime...");
   
-  webSocket.beginSSL("nikolaindustry-realtime.onrender.com", 443, ("/?id=" + deviceId).c_str());
+  webSocket.begin("nikolaindustry-realtime.onrender.com", 443, ("/?id=" + deviceId).c_str());
 
   webSocket.onEvent([this](WStype_t type, uint8_t *payload, size_t length)
                     {
