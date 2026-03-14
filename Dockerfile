@@ -4,8 +4,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # ── System dependencies ────────────────────────────────────────
 RUN apt-get update && apt-get install -y \
-    curl wget git ca-certificates \
+    curl wget git ca-certificates python3 python3-pip \
     && rm -rf /var/lib/apt/lists/*
+
+# ── Install Python dependencies for ESP32 tools ────────────────
+RUN pip3 install pyserial
 
 # ── Install Node.js 20 (LTS) ───────────────────────────────────
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
