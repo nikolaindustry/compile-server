@@ -240,18 +240,19 @@ app.post('/compile', auth, async (req, res) => {
       console.log(`✓ Using partition scheme: ${partitionScheme} (${partitionTablePath})`);
     }
 
-    const buildExtraFlags = [
-      `-DARDUINO_FLASH_MODE_${flashMode.toUpperCase()}`,
-      `-DARDUINO_FLASH_FREQ_${flashFreq.toUpperCase()}`,
-      `-DARDUINO_FLASH_SIZE_${flashSize.toUpperCase().replace('MB', 'MB')}`
-    ].join(' ');
+    // Build properties for flash configuration
+    const buildProperties = [
+      `build.extra_flags=-DARDUINO_FLASH_MODE_${flashMode.toUpperCase()}`,
+      `build.extra_flags=-DARDUINO_FLASH_FREQ_${flashFreq.toUpperCase()}`,
+      `build.extra_flags=-DARDUINO_FLASH_SIZE_${flashSize.toUpperCase()}`
+    ];
 
     const cmd = [
       'arduino-cli compile',
       `--fqbn ${board}`,
       `--output-dir ${buildDir}`,
-      eraseFlash ? '--clean' : '',  // Use --clean instead of non-existent --erase-all
-      `--extra-flags "${buildExtraFlags}"`,
+      eraseFlash ? '--clean' : '',
+      buildProperties.map(prop => `--build-property "${prop}"`).join(' '),
       `--partition-table "${partitionTablePath}"`,
       `${sketchDir}/${sketchName}`
     ].join(' ');
