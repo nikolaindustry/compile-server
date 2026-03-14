@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: hyperwisor-compile-server
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    disk:
+      name: arduino-cache
+      mountPath: /root/Arduino
+      sizeGB: 5
+    envVars:
+      - key: HYPERWISOR_SECRET
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: PORT
+        value: 3000
