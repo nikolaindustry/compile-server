@@ -5,8 +5,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 # ── System dependencies ────────────────────────────────────────
 RUN apt-get update && apt-get install -y \
     curl wget git ca-certificates \
-    nodejs npm \
     && rm -rf /var/lib/apt/lists/*
+
+# ── Install Node.js 20 (LTS) ───────────────────────────────────
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs
 
 # ── Install arduino-cli ────────────────────────────────────────
 RUN curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh \
