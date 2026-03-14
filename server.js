@@ -1,11 +1,27 @@
 import express from 'express';
 import { exec, execSync } from 'child_process';
-import { writeFileSync, mkdirSync, rmSync, readFileSync, existsSync } from 'fs';
+import { writeFileSync, mkdirSync, rmSync, readFileSync, existsSync, cpSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
 const app = express();
 app.use(express.json({ limit: '4mb' }));
+
+// ── Sync bundled libraries into persistent disk on startup ─────
+// The persistent disk mounts at /root/Arduino and would overwrite
+// libraries baked into the Docker image. We copy them from /opt/arduino-libraries
+// to /root/Arduino/libraries/ at startup so they're always available.
+const BUNDLED_LIBS_SRC = '/opt/arduino-libraries';
+const ARDUINO_LIBS_DEST = '/root/Arduino/libraries';
+try {
+  if (existsSync(BUNDLED_LIBS_SRC)) {
+    mkdirSync(ARDUINO_LIBS_DEST, { recursive: true });
+    cpSync(BUNDLED_LIBS_SRC, ARDUINO_LIBS_DEST, { recursive: true, force: false });
+    console.log('✓ Bundled libraries synced to /root/Arduino/libraries');
+  }
+} catch (e) {
+  console.error('Warning: Could not sync bundled libraries:', e.message);
+}
 
 // ── Supabase client (server-side, uses service_role key) ──────
 const supabase = createClient(

@@ -31,12 +31,10 @@ RUN arduino-cli config init && \
 RUN arduino-cli core update-index && \
     arduino-cli core install esp32:esp32@2.0.17
 
-# ── Copy ALL local Arduino libraries (the entire libraries/ folder)
-# This includes hyperwisor-iot and ALL its dependencies.
-# Just paste your local Arduino/libraries folder content here:
-#   compile-server/libraries/  ← paste everything from your local
-#                                  C:/Users/<you>/Documents/Arduino/libraries/
-COPY libraries/ /root/Arduino/libraries/
+# ── Copy bundled libraries to a safe path (not overwritten by persistent disk)
+# The persistent disk mounts at /root/Arduino at runtime, so we store
+# bundled libraries in /opt/arduino-libraries and sync them on startup.
+COPY libraries/ /opt/arduino-libraries/
 
 # ── Node.js app ───────────────────────────────────────────────
 WORKDIR /app
