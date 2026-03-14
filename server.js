@@ -129,7 +129,7 @@ function ensureLibrary(libSpec) {
 //   flashMode        {string}    Optional. Flash mode. Defaults to "qio"
 //   flashFreq        {string}    Optional. Flash frequency. Defaults to "80m"
 //   flashSize        {string}    Optional. Flash size. Defaults to "4MB"
-//   eraseFlash       {boolean}   Optional. Erase all flash before compile. Defaults to true
+//   eraseFlash       {boolean}   Optional. Clean build folder before compile. Defaults to true
 //
 // Response 200:
 //   { success, jobId, binUrl, sizeBytes, compiledAt }
@@ -149,7 +149,7 @@ app.post('/compile', auth, async (req, res) => {
     flashMode: flashModeInput,                // ← will default below
     flashFreq = '80m',
     flashSize = '4MB',
-    eraseFlash = true    // ← default to true to ensure clean flash
+    eraseFlash = true    // ← default to true for clean builds
   } = req.body;
 
   // Apply defaults with normalization for UI compatibility
@@ -250,7 +250,7 @@ app.post('/compile', auth, async (req, res) => {
       'arduino-cli compile',
       `--fqbn ${board}`,
       `--output-dir ${buildDir}`,
-      eraseFlash ? '--erase-all' : '',
+      eraseFlash ? '--clean' : '',  // Use --clean instead of non-existent --erase-all
       `--extra-flags "${buildExtraFlags}"`,
       `--partition-table "${partitionTablePath}"`,
       `${sketchDir}/${sketchName}`
