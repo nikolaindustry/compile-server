@@ -91,6 +91,53 @@ app.get('/libraries/search', auth, (req, res) => {
   });
 });
 
+// ── Library dependency resolver ────────────────────────────────
+// Maps libraries to their compatible versions and dependencies
+const LIBRARY_DEPENDENCIES = {
+  'WebSockets': {
+    version: '2.3.7', // Version with beginSSL support
+    dependencies: ['Ethernet'] // Optional but recommended
+  },
+  'DHT sensor library': {
+    dependencies: ['Adafruit Unified Sensor']
+  },
+  'Adafruit SSD1306': {
+    dependencies: ['Adafruit GFX Library']
+  }
+};
+
+// ── Helper: resolve library dependencies ─────────────────────
+function resolveLibraryDependencies(libraries) {
+  const resolvedLibs = new Set();
+  
+  for (let lib of libraries) {
+    const libName = lib.split('@')[0].trim();
+    const libVersion = lib.includes('@') ? lib.split('@')[1] : null;
+    
+    // Add the library itself (with version if specified)
+    resolvedLibs.add(libVersion ? `${libName}@${libVersion}` : libName);
+    
+    // Check if we have dependency info for this library
+    const depInfo = LIBRARY_DEPENDENCIES[libName];
+    if (depInfo) {
+      // Add pinned version if available
+      if (depInfo.version && !libVersion) {
+        resolvedLibs.delete(libName); // Remove unpinned version
+        resolvedLibs.add(`${libName}@${depInfo.version}`); // Add pinned version
+      }
+      
+      // Add dependencies
+      if (depInfo.dependencies) {
+        for (const dep of depInfo.dependencies) {
+          resolvedLibs.add(dep);
+        }
+      }
+    }
+  }
+  
+  return Array.from(resolvedLibs);
+}
+
 // ── Helper: ensure a library is installed ─────────────────────
 // Installs via arduino-cli if not already cached.
 // Accepts: "LibraryName" or "LibraryName@1.2.3"
@@ -173,6 +220,10 @@ app.post('/compile', auth, async (req, res) => {
     }
   }
 
+  // Resolve library dependencies and versions
+  const resolvedLibraries = resolveLibraryDependencies(libraries);
+  console.log(`📚 Resolved libraries: ${libraries.join(', ')} → ${resolvedLibraries.join(', ')}`);
+
   // Validate board FQBN (prevent command injection)
   const safeBoardPattern = /^[a-zA-Z0-9:_\-\.]+$/;
   if (!safeBoardPattern.test(board)) {
@@ -187,7 +238,7 @@ app.post('/compile', auth, async (req, res) => {
   try {
     // Install any requested extra libraries (cached after first install)
     const libInstallErrors = [];
-    for (const lib of libraries) {
+    for (const lib of resolvedLibraries) {
       try {
         ensureLibrary(lib);
       } catch (e) {
