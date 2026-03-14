@@ -144,28 +144,22 @@ app.post('/compile', auth, async (req, res) => {
     productId,
     version = '1.0.0',
     libraries = [],      // ← user-specified extra libraries
-    partitionScheme,                   // ← will default below
-    partitionsCsv,                   // ← optional custom partition CSV
-    flashMode,                       // ← will default below
+    partitionScheme: partitionSchemeInput,    // ← will default below
+    partitionsCsv,       // ← optional custom partition CSV
+    flashMode: flashModeInput,                // ← will default below
     flashFreq = '80m',
     flashSize = '4MB',
-    eraseFlash = true                // ← default to true to ensure clean flash
+    eraseFlash = true    // ← default to true to ensure clean flash
   } = req.body;
 
   // Apply defaults with normalization for UI compatibility
-  if (!partitionScheme) {
-    partitionScheme = 'min_spiffs';  // Default: Minimal SPIFFS
-  } else {
-    // Normalize: trim whitespace and convert to lowercase
-    partitionScheme = partitionScheme.toString().trim().toLowerCase();
-  }
+  const partitionScheme = !partitionSchemeInput 
+    ? 'min_spiffs'  // Default: Minimal SPIFFS
+    : partitionSchemeInput.toString().trim().toLowerCase();
   
-  if (!flashMode) {
-    flashMode = 'qio';  // Default: QIO for max performance
-  } else {
-    // Normalize flash mode
-    flashMode = flashMode.toString().trim().toLowerCase();
-  }
+  const flashMode = !flashModeInput 
+    ? 'qio'  // Default: QIO for max performance
+    : flashModeInput.toString().trim().toLowerCase();
 
   if (!source || !productId) {
     return res.status(400).json({ error: 'source and productId are required' });
