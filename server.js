@@ -1,6 +1,6 @@
 import express from 'express';
 import { exec, execSync } from 'child_process';
-import { writeFileSync, mkdirSync, rmSync, readFileSync, existsSync, cpSync } from 'fs';
+import { writeFileSync, mkdirSync, rmSync, readFileSync, existsSync, cpSync, readdirSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { join, dirname } from 'path';
