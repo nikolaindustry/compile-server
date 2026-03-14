@@ -173,6 +173,12 @@ app.post('/compile', auth, async (req, res) => {
     }
   }
 
+  // Validate board FQBN (prevent command injection)
+  const safeBoardPattern = /^[a-zA-Z0-9:_\-\.]+$/;
+  if (!safeBoardPattern.test(board)) {
+    return res.status(400).json({ error: `Invalid board FQBN: ${board}` });
+  }
+
   const jobId = randomUUID();
   const sketchName = 'sketch';
   const sketchDir = `/tmp/job_${jobId}`;
@@ -240,13 +246,31 @@ app.post('/compile', auth, async (req, res) => {
       console.log(`✓ Using partition scheme: ${partitionScheme} (${partitionTablePath})`);
     }
 
-    // Build properties for flash configuration and partition table
+    // For ESP32, we need to copy the partition table to the sketch directory
+    // so arduino-cli can find it during compilation
+    const sketchPartitionTablePath = `${sketchDir}/${sketchName}/partitions.csv`;
+    
+    try {
+      // Copy partition table to sketch directory
+      cpSync(partitionTablePath, sketchPartitionTablePath);
+      console.log(`✓ Copied partition table to sketch: ${sketchPartitionTablePath}`);
+    } catch (copyErr) {
+      cleanup(sketchDir);
+      return res.status(500).json({ 
+        error: 'Failed to copy partition table',
+        details: copyErr.message 
+      });
+    }
+
+    // Build properties for flash configuration
     const buildProperties = [
       `build.extra_flags=-DARDUINO_FLASH_MODE_${flashMode.toUpperCase()}`,
       `build.extra_flags=-DARDUINO_FLASH_FREQ_${flashFreq.toUpperCase()}`,
-      `build.extra_flags=-DARDUINO_FLASH_SIZE_${flashSize.toUpperCase()}`,
-      `partition.table=${partitionTablePath}`
+      `build.extra_flags=-DARDUINO_FLASH_SIZE_${flashSize.toUpperCase()}`
     ];
+
+    console.log(`🔨 Starting compilation for board: ${board}`);
+    console.log(`📋 Build properties: ${buildProperties.length} defined`);
 
     const cmd = [
       'arduino-cli compile',
@@ -257,8 +281,11 @@ app.post('/compile', auth, async (req, res) => {
       `${sketchDir}/${sketchName}`
     ].join(' ');
 
+    console.log(`⚙️  Command: ${cmd}`);
+
     exec(cmd, { timeout: 120000 }, async (err, stdout, stderr) => {
       if (err) {
+        console.error(`❌ Compilation failed: ${stderr || err.message}`);
         cleanup(sketchDir);
         return res.status(422).json({
           success: false,

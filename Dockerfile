@@ -43,5 +43,8 @@ RUN npm install --omit=dev
 COPY server.js .
 COPY partitions/ ./partitions/
 
+# Expose port for the HTTP server
 EXPOSE 3000
+
+# Start the Node.js application
 CMD ["node", "server.js"]
