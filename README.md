@@ -99,7 +99,10 @@ Compile `.ino` source code for ESP32. Uploads the `.bin` to Supabase Storage and
   "libraries": [
     "DHT sensor library",
     "Adafruit SSD1306@2.5.7"
-  ]
+  ],
+  "partitionScheme": "min_spiffs",
+  "flashFreq": "80m",
+  "eraseFlash": true
 }
 ```
 
@@ -110,6 +113,12 @@ Compile `.ino` source code for ESP32. Uploads the `.bin` to Supabase Storage and
 | `version` | string | no | `"1.0.0"` | Used in storage filename |
 | `board` | string | no | `esp32:esp32:esp32` | arduino-cli FQBN |
 | `libraries` | string[] | no | `[]` | Extra libs to install. Format: `"Name"` or `"Name@version"` |
+| `partitionScheme` | string | no | `min_spiffs` | Partition scheme: `min_spiffs`, `default`, `huge_app`, `no_ota` |
+| `partitionsCsv` | string | no | — | Custom partition CSV (overrides `partitionScheme`) |
+| `flashMode` | string | no | `qio` | Flash mode: `qio`, `dio`, `dout`, `fastread` |
+| `flashFreq` | string | no | `80m` | Flash frequency: `80m`, `40m` |
+| `flashSize` | string | no | `4MB` | Flash size: `4MB`, `2MB`, `16MB` |
+| `eraseFlash` | boolean | no | `true` | Erase all flash before compilation (recommended for clean updates) |
 
 **Response 200:**
 ```json

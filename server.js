@@ -3,9 +3,16 @@ import { exec, execSync } from 'child_process';
 import { writeFileSync, mkdirSync, rmSync, readFileSync, existsSync, cpSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 app.use(express.json({ limit: '4mb' }));
+
+// ── Partition table path ──────────────────────────────────────
+const PARTITIONS_DIR = join(__dirname, 'partitions');
 
 // ── Sync bundled libraries into persistent disk on startup ─────
 // The persistent disk mounts at /root/Arduino and would overwrite
@@ -103,12 +110,19 @@ function ensureLibrary(libSpec) {
 // array of library names to install before compiling.
 //
 // Request body:
-//   source      {string}    Full .ino source code
-//   productId   {string}    UUID of the product
-//   version     {string}    Firmware version e.g. "1.0.3"
-//   board       {string}    Optional. Defaults to esp32:esp32:esp32
-//   libraries   {string[]}  Optional. Extra libraries to install.
-//                           e.g. ["DHT sensor library", "Adafruit SSD1306@2.5.7"]
+//   source           {string}    Full .ino source code
+//   productId        {string}    UUID of the product
+//   version          {string}    Firmware version e.g. "1.0.3"
+//   board            {string}    Optional. Defaults to esp32:esp32:esp32
+//   libraries        {string[]}  Optional. Extra libraries to install.
+//                                 e.g. ["DHT sensor library", "Adafruit SSD1306@2.5.7"]
+//   partitionScheme  {string}    Optional. Partition scheme. Defaults to "min_spiffs"
+//                                 Available: "min_spiffs", "default", "huge_app", "no_ota"
+//   partitionsCsv    {string}    Optional. Custom partition table CSV content
+//   flashMode        {string}    Optional. Flash mode. Defaults to "qio"
+//   flashFreq        {string}    Optional. Flash frequency. Defaults to "80m"
+//   flashSize        {string}    Optional. Flash size. Defaults to "4MB"
+//   eraseFlash       {boolean}   Optional. Erase all flash before compile. Defaults to true
 //
 // Response 200:
 //   { success, jobId, binUrl, sizeBytes, compiledAt }
@@ -122,7 +136,13 @@ app.post('/compile', auth, async (req, res) => {
     board = 'esp32:esp32:esp32',
     productId,
     version = '1.0.0',
-    libraries = []   // ← user-specified extra libraries
+    libraries = [],      // ← user-specified extra libraries
+    partitionScheme = 'min_spiffs',  // ← Minimal SPIFFS (1.9MB APP with OTA/128KB SPIFFS)
+    partitionsCsv,                   // ← optional custom partition CSV
+    flashMode = 'qio',               // ← QIO (Quad I/O) for maximum performance
+    flashFreq = '80m',
+    flashSize = '4MB',
+    eraseFlash = true                // ← default to true to ensure clean flash
   } = req.body;
 
   if (!source || !productId) {
@@ -167,10 +187,41 @@ app.post('/compile', auth, async (req, res) => {
     mkdirSync(buildDir, { recursive: true });
     writeFileSync(`${sketchDir}/${sketchName}/${sketchName}.ino`, source);
 
+    // Determine partition table to use
+    let partitionTablePath;
+    
+    if (partitionsCsv) {
+      // Use custom partition CSV provided by user
+      partitionTablePath = `${sketchDir}/partitions.csv`;
+      writeFileSync(partitionTablePath, partitionsCsv);
+      console.log(`Using custom partition table at ${partitionTablePath}`);
+    } else {
+      // Use built-in partition scheme
+      const partitionFileName = `${partitionScheme}.csv`;
+      partitionTablePath = join(PARTITIONS_DIR, partitionFileName);
+      
+      if (!existsSync(partitionTablePath)) {
+        cleanup(sketchDir);
+        return res.status(400).json({ 
+          error: `Partition scheme "${partitionScheme}" not found. Available schemes: min_spiffs, default, huge_app, no_ota` 
+        });
+      }
+      console.log(`Using partition scheme: ${partitionScheme} (${partitionTablePath})`);
+    }
+
+    const buildExtraFlags = [
+      `-DARDUINO_FLASH_MODE_${flashMode.toUpperCase()}`,
+      `-DARDUINO_FLASH_FREQ_${flashFreq.toUpperCase()}`,
+      `-DARDUINO_FLASH_SIZE_${flashSize.toUpperCase().replace('MB', 'MB')}`
+    ].join(' ');
+
     const cmd = [
       'arduino-cli compile',
       `--fqbn ${board}`,
       `--output-dir ${buildDir}`,
+      eraseFlash ? '--erase-all' : '',
+      `--extra-flags "${buildExtraFlags}"`,
+      `--partition-table "${partitionTablePath}"`,
       `${sketchDir}/${sketchName}`
     ].join(' ');
 

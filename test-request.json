@@ -1,5 +1,10 @@
 {
-  "source": "void setup() { pinMode(LED_BUILTIN, OUTPUT); } void loop() { digitalWrite(LED_BUILTIN, HIGH); delay(1000); digitalWrite(LED_BUILTIN, LOW); delay(1000); }",
+  "source": "#define LED_PIN 2\nvoid setup() { pinMode(LED_PIN, OUTPUT); } void loop() { digitalWrite(LED_PIN, HIGH); delay(1000); digitalWrite(LED_PIN, LOW); delay(1000); }",
   "productId": "test-product-123",
-  "version": "1.0.0"
+  "version": "1.0.0",
+  "partitionScheme": "min_spiffs",
+  "flashFreq": "80m",
+  "flashMode": "qio",
+  "flashSize": "4MB",
+  "eraseFlash": true
 }
