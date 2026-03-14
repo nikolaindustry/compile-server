@@ -287,10 +287,40 @@ app.post('/compile', auth, async (req, res) => {
       if (err) {
         console.error(`❌ Compilation failed: ${stderr || err.message}`);
         cleanup(sketchDir);
+        
+        // Check for common missing dependency errors
+        const errorMessage = (stderr || err.message).slice(0, 3000);
+        let helpfulMessage = '';
+        
+        if (errorMessage.includes('fatal error:') && errorMessage.includes('.h: No such file or directory')) {
+          const match = errorMessage.match(/fatal error: (.*?): No such file/);
+          if (match) {
+            const missingHeader = match[1];
+            helpfulMessage = `\n\n💡 Missing dependency: The header file <${missingHeader}> was not found.\n`;
+            helpfulMessage += `   This usually means a required library is not installed.\n`;
+            helpfulMessage += `   Try adding the missing library to your 'libraries' array in the compile request.\n`;
+            
+            // Common header to library mappings
+            const commonLibraries = {
+              'Ethernet.h': 'Ethernet',
+              'WiFi.h': 'WiFi',
+              'SPI.h': 'SPI (should be built-in)',
+              'Wire.h': 'Wire (should be built-in)',
+              'Adafruit_Sensor.h': 'Adafruit Unified Sensor',
+              'DHT_U.h': 'DHT sensor library',
+              'DHT.h': 'DHT sensor library'
+            };
+            
+            if (commonLibraries[missingHeader]) {
+              helpfulMessage += `\n   Suggested library: "${commonLibraries[missingHeader]}"`;
+            }
+          }
+        }
+        
         return res.status(422).json({
           success: false,
           error: 'Compilation failed',
-          stderr: (stderr || err.message).slice(0, 3000)
+          stderr: errorMessage + helpfulMessage
         });
       }
 

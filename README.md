@@ -112,7 +112,7 @@ Compile `.ino` source code for ESP32. Uploads the `.bin` to Supabase Storage and
 | `productId` | string | yes | — | Supabase product UUID |
 | `version` | string | no | `"1.0.0"` | Used in storage filename |
 | `board` | string | no | `esp32:esp32:esp32` | arduino-cli FQBN |
-| `libraries` | string[] | no | `[]` | Extra libs to install. Format: `"Name"` or `"Name@version"` |
+| `libraries` | string[] | no | `[]` | Extra libs to install. Format: `"Name"` or `"Name@version"`. **Note:** Include ALL transitive dependencies (e.g., if using WebSockets, also add "Ethernet" if needed) |
 | `partitionScheme` | string | no | `min_spiffs` | Partition scheme: `min_spiffs`, `default`, `huge_app`, `no_ota` |
 | `partitionsCsv` | string | no | — | Custom partition CSV (overrides `partitionScheme`) |
 | `flashMode` | string | no | `qio` | Flash mode: `qio`, `dio`, `dout`, `fastread` |
