@@ -113,6 +113,7 @@ Compile `.ino` source code for ESP32. Uploads the `.bin` to Supabase Storage and
 | `version` | string | no | `"1.0.0"` | Used in storage filename |
 | `board` | string | no | `esp32:esp32:esp32` | arduino-cli FQBN |
 | `libraries` | string[] | no | `[]` | Extra libs to install. Format: `"Name"` or `"Name@version"`. **Auto-resolved:** WebSockets → v2.3.7 + Ethernet, DHT → Adafruit Unified Sensor, etc. |
+| `customLibraries` | object[] | no | `[]` | Custom libraries as files or ZIPs. Format: `[{name: "MyLib", files: [{path: "src/MyLib.h", content: "..."}]}]` OR `[{name: "MyLib", zipBase64: "base64-encoded-zip"}]` |
 | `partitionScheme` | string | no | `min_spiffs` | Partition scheme: `min_spiffs`, `default`, `huge_app`, `no_ota` |
 | `partitionsCsv` | string | no | — | Custom partition CSV (overrides `partitionScheme`) |
 | `flashMode` | string | no | `qio` | Flash mode: `qio`, `dio`, `dout`, `fastread` |

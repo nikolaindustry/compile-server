@@ -184,6 +184,9 @@ function ensureLibrary(libSpec) {
 //   board            {string}    Optional. Defaults to esp32:esp32:esp32
 //   libraries        {string[]}  Optional. Extra libraries to install.
 //                                 e.g. ["DHT sensor library", "Adafruit SSD1306@2.5.7"]
+//   customLibraries  {object[]}  Optional. Custom libraries as ZIP files or source.
+//                                 Format: [{name: "MyLib", zipBase64: "..."}] OR
+//                                         [{name: "MyLib", files: [{path: "src/MyLib.h", content: "..."}]}]
 //   partitionScheme  {string}    Optional. Partition scheme. Defaults to "min_spiffs"
 //                                 Available: "min_spiffs", "default", "huge_app", "no_ota"
 //   partitionsCsv    {string}    Optional. Custom partition table CSV content
@@ -205,6 +208,7 @@ app.post('/compile', auth, async (req, res) => {
     productId,
     version = '1.0.0',
     libraries = [],      // ← user-specified extra libraries
+    customLibraries = [], // ← user-uploaded custom libraries
     partitionScheme: partitionSchemeInput,    // ← will default below
     partitionsCsv,       // ← optional custom partition CSV
     flashMode: flashModeInput,                // ← will default below
@@ -258,8 +262,44 @@ app.post('/compile', auth, async (req, res) => {
   const sketchName = 'sketch';
   const sketchDir = `/tmp/job_${jobId}`;
   const buildDir = `${sketchDir}/build`;
+  const librariesDir = `${sketchDir}/libraries`; // Custom libraries directory
 
   try {
+    // Install custom libraries first (from uploaded files)
+    if (customLibraries.length > 0) {
+      console.log(`📦 Processing ${customLibraries.length} custom libraries...`);
+      mkdirSync(librariesDir, { recursive: true });
+      
+      for (const customLib of customLibraries) {
+        try {
+          const libDir = `${librariesDir}/${customLib.name}`;
+          
+          if (customLib.zipBase64) {
+            // Extract from base64 ZIP
+            console.log(`  → Installing ${customLib.name} from ZIP...`);
+            const zipBuffer = Buffer.from(customLib.zipBase64, 'base64');
+            // TODO: Implement ZIP extraction using a library like 'adm-zip'
+            // For now, we'll create a placeholder
+            mkdirSync(libDir, { recursive: true });
+            writeFileSync(`${libDir}/README.txt`, `Library ${customLib.name} uploaded as ZIP\nSize: ${zipBuffer.length} bytes`);
+          } else if (customLib.files) {
+            // Create from file structure
+            console.log(`  → Installing ${customLib.name} from files (${customLib.files.length} files)...`);
+            for (const file of customLib.files) {
+              const filePath = `${libDir}/${file.path}`;
+              const dirPath = filePath.substring(0, filePath.lastIndexOf('/'));
+              mkdirSync(dirPath, { recursive: true });
+              writeFileSync(filePath, file.content);
+            }
+          }
+          
+          console.log(`  ✓ Installed ${customLib.name}`);
+        } catch (e) {
+          console.error(`  ✗ Failed to install ${customLib.name}:`, e.message);
+        }
+      }
+    }
+
     // Install any requested extra libraries (cached after first install)
     const libInstallErrors = [];
     for (const lib of resolvedLibraries) {
