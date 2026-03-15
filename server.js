@@ -143,15 +143,29 @@ function resolveLibraryDependencies(libraries) {
 // Accepts: "LibraryName" or "LibraryName@1.2.3"
 function ensureLibrary(libSpec) {
   const key = libSpec.toLowerCase();
-  if (installedLibCache.has(key)) return; // already installed this session
-
+  
   // Check if it's bundled (in /root/Arduino/libraries) — skip install
   const libName = libSpec.split('@')[0].trim();
   const bundledPath = `/root/Arduino/libraries/${libName}`;
   if (existsSync(bundledPath)) {
+    console.log(`✓ Library ${libName} found in bundled libraries`);
     installedLibCache.add(key);
     return;
   }
+  
+  // For versioned libraries, always reinstall to ensure correct version
+  const hasVersion = libSpec.includes('@');
+  if (hasVersion) {
+    console.log(`📦 Installing specific version: ${libSpec}`);
+    try {
+      execSync(`arduino-cli lib uninstall "${libName}"`, { timeout: 30000, stdio: 'ignore' });
+    } catch (e) {
+      // Ignore if not installed
+    }
+    installedLibCache.delete(key); // Force reinstall
+  }
+  
+  if (installedLibCache.has(key) && !hasVersion) return; // already installed this session
 
   // Install from Arduino Library Registry
   console.log(`Installing library: ${libSpec}`);
@@ -222,7 +236,17 @@ app.post('/compile', auth, async (req, res) => {
 
   // Resolve library dependencies and versions
   const resolvedLibraries = resolveLibraryDependencies(libraries);
-  console.log(`📚 Resolved libraries: ${libraries.join(', ')} → ${resolvedLibraries.join(', ')}`);
+  console.log(`📚 Original libraries requested: ${libraries.join(', ')}`);
+  console.log(`🔧 Resolved libraries to install: ${resolvedLibraries.join(', ')}`);
+  
+  // Log which specific versions will be installed
+  for (const lib of resolvedLibraries) {
+    if (lib.includes('@')) {
+      console.log(`  → ${lib} (pinned version)`);
+    } else {
+      console.log(`  → ${lib} (latest)`);
+    }
+  }
 
   // Validate board FQBN (prevent command injection)
   const safeBoardPattern = /^[a-zA-Z0-9:_\-\.]+$/;
