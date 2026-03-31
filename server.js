@@ -65,7 +65,7 @@ const installedLibCache = new Set();
 // ── Auth middleware ────────────────────────────────────────────
 const auth = (req, res, next) => {
   const token = req.headers['x-hyperwisor-token'];
-  if (!token || token !== process.env.HYPERWISOR_SECRET) {
+  if (!token || token !== (process.env.HYPERWISOR_SECRET || process.env.COMPILE_SERVER_SECRET)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   next();
