@@ -411,6 +411,7 @@ app.post('/compile', auth, async (req, res) => {
       'arduino-cli compile',
       `--fqbn ${board}`,
       `--output-dir ${buildDir}`,
+      '--jobs 4',  // Parallel compilation for faster builds
       eraseFlash ? '--clean' : '',
       buildProperties.map(prop => `--build-property "${prop}"`).join(' '),
       `${sketchDir}/${sketchName}`
