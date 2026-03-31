@@ -32,7 +32,7 @@ COPY package.json .
 RUN npm install --omit=dev
 
 # Copy only necessary files
-COPY server-new.js server.js
+COPY server.js .
 COPY partitions/ ./partitions/
 
 EXPOSE 3000
