@@ -1,6 +1,6 @@
 import express from 'express';
 import { exec, execSync } from 'child_process';
-import { writeFileSync, mkdirSync, rmSync, readFileSync, existsSync, cpSync, readdirSync } from 'fs';
+import { writeFileSync, mkdirSync, rmSync, readFileSync, existsSync, cpSync, readdirSync, statSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { join, dirname } from 'path';
@@ -41,11 +41,35 @@ try {
 // to /root/Arduino/libraries/ at startup so they're always available.
 const BUNDLED_LIBS_SRC = '/opt/arduino-libraries';
 const ARDUINO_LIBS_DEST = '/root/Arduino/libraries';
+const BUNDLED_VERSION_FILE = `${ARDUINO_LIBS_DEST}/.bundled-version`;
+
+function getBundleVersion() {
+  try {
+    const stats = statSync(BUNDLED_LIBS_SRC);
+    return `${stats.mtime.getTime()}-${stats.size}`;
+  } catch { return null; }
+}
+
+function getCurrentVersion() {
+  try { return readFileSync(BUNDLED_VERSION_FILE, 'utf8'); }
+  catch { return null; }
+}
+
 try {
   if (existsSync(BUNDLED_LIBS_SRC)) {
-    mkdirSync(ARDUINO_LIBS_DEST, { recursive: true });
-    cpSync(BUNDLED_LIBS_SRC, ARDUINO_LIBS_DEST, { recursive: true, force: true });
-    console.log('✓ Bundled libraries synced to /root/Arduino/libraries');
+    const bundleVersion = getBundleVersion();
+    const currentVersion = getCurrentVersion();
+    
+    // Only sync if version changed (saves memory on restart)
+    if (bundleVersion !== currentVersion) {
+      console.log('📦 Library sync needed, updating...');
+      mkdirSync(ARDUINO_LIBS_DEST, { recursive: true });
+      cpSync(BUNDLED_LIBS_SRC, ARDUINO_LIBS_DEST, { recursive: true, force: true });
+      writeFileSync(BUNDLED_VERSION_FILE, bundleVersion);
+      console.log('✓ Bundled libraries synced to /root/Arduino/libraries');
+    } else {
+      console.log('✓ Libraries up to date, skipping sync (saves memory)');
+    }
   }
 } catch (e) {
   console.error('Warning: Could not sync bundled libraries:', e.message);
@@ -411,7 +435,7 @@ app.post('/compile', auth, async (req, res) => {
       'arduino-cli compile',
       `--fqbn ${board}`,
       `--output-dir ${buildDir}`,
-      '--jobs 4',  // Parallel compilation for faster builds
+      // Note: --jobs removed to save memory (2GB limit on Standard plan)
       eraseFlash ? '--clean' : '',
       buildProperties.map(prop => `--build-property "${prop}"`).join(' '),
       `${sketchDir}/${sketchName}`
