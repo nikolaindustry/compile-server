@@ -11,6 +11,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json({ limit: '4mb' }));
 
+// ── CORS ───────────────────────────────────────────────────────
+// Allow all origins so the browser-based frontend can reach this API
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-hyperwisor-token');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 // ── Partition table path ──────────────────────────────────────
 const PARTITIONS_DIR = join(__dirname, 'partitions');
 console.log(`📁 Partitions directory: ${PARTITIONS_DIR}`);
