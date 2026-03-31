@@ -29,7 +29,7 @@ RUN arduino-cli config init && \
 # On Render with persistent disk mounted at /root/Arduino,
 # the core survives redeploys. First deploy will download ~300MB.
 RUN arduino-cli core update-index && \
-    arduino-cli core install esp32:esp32@2.0.17
+    arduino-cli core install esp32:esp32@3.1.1
 
 # ── Copy bundled libraries to a safe path (not overwritten by persistent disk)
 # The persistent disk mounts at /root/Arduino at runtime, so we store

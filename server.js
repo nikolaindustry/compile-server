@@ -230,6 +230,12 @@ app.post('/compile', auth, async (req, res) => {
     return res.status(400).json({ error: 'source and productId are required' });
   }
 
+  // Sanitize source code — strip markdown code fences if user wrapped code in ```
+  const cleanSource = source
+    .replace(/^```(?:cpp|c\+\+|ino|arduino)?\s*/i, '')  // Remove opening fence
+    .replace(/\s*```\s*$/i, '')                            // Remove closing fence
+    .trim();
+
   // Validate library names (prevent shell injection)
   const safeLibraryPattern = /^[a-zA-Z0-9 _\-\.@]+$/;
   for (const lib of libraries) {
@@ -322,7 +328,7 @@ app.post('/compile', auth, async (req, res) => {
     // Write sketch to temp directory
     mkdirSync(`${sketchDir}/${sketchName}`, { recursive: true });
     mkdirSync(buildDir, { recursive: true });
-    writeFileSync(`${sketchDir}/${sketchName}/${sketchName}.ino`, source);
+    writeFileSync(`${sketchDir}/${sketchName}/${sketchName}.ino`, cleanSource);
 
     // Determine partition table to use
     let partitionTablePath;
