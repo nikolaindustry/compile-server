@@ -30,7 +30,7 @@ const ARDUINO_LIBS_DEST = '/root/Arduino/libraries';
 try {
   if (existsSync(BUNDLED_LIBS_SRC)) {
     mkdirSync(ARDUINO_LIBS_DEST, { recursive: true });
-    cpSync(BUNDLED_LIBS_SRC, ARDUINO_LIBS_DEST, { recursive: true, force: false });
+    cpSync(BUNDLED_LIBS_SRC, ARDUINO_LIBS_DEST, { recursive: true, force: true });
     console.log('✓ Bundled libraries synced to /root/Arduino/libraries');
   }
 } catch (e) {
