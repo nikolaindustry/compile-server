@@ -31,6 +31,14 @@ RUN arduino-cli config init && \
 RUN arduino-cli core update-index && \
     arduino-cli core install esp32:esp32@2.0.17
 
+# ── Pre-install WebSockets 2.3.7 (compatible with ESP32 2.0.17) ─
+# Download and extract to /opt/arduino-libraries for sync on startup
+RUN curl -L -o /tmp/websockets.zip "https://github.com/Links2004/arduinoWebSockets/archive/refs/tags/2.3.7.zip" && \
+    unzip -q /tmp/websockets.zip -d /tmp && \
+    mv /tmp/arduinoWebSockets-2.3.7 /opt/arduino-libraries/WebSockets && \
+    rm /tmp/websockets.zip && \
+    echo "WebSockets 2.3.7 pre-installed"
+
 # ── Copy bundled libraries to a safe path (not overwritten by persistent disk)
 # The persistent disk mounts at /root/Arduino at runtime, so we store
 # bundled libraries in /opt/arduino-libraries and sync them on startup.
