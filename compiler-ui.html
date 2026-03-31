@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Hyperwisor Firmware Compiler</title>
+<style>
+  :root {
+    --bg:        #0d1117;
+    --surface:   #161b22;
+    --border:    #30363d;
+    --accent:    #238636;
+    --accent-h:  #2ea043;
+    --danger:    #da3633;
+    --warn:      #d29922;
+    --info:      #388bfd;
+    --text:      #e6edf3;
+    --muted:     #8b949e;
+    --editor-bg: #0d1117;
+    --line-num:  #3d444d;
+    --success:   #3fb950;
+    --radius:    6px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Top bar ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--text);
+  }
+
+  .logo svg { color: var(--info); }
+
+  header .spacer { flex: 1; }
+
+  .settings-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  label.field-label {
+    font-size: 11px;
+    color: var(--muted);
+    margin-right: 4px;
+  }
+
+  select, input[type="text"], input[type="password"] {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--radius);
+    padding: 5px 10px;
+    font-size: 12px;
+    outline: none;
+  }
+
+  select:focus, input:focus {
+    border-color: var(--info);
+  }
+
+  /* ── Main split layout ── */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── Editor panel ── */
+  .editor-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  .editor-toolbar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 6px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .tab {
+    font-size: 12px;
+    color: var(--muted);
+    padding: 4px 10px;
+    border-radius: var(--radius);
+    cursor: default;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .tab.active {
+    color: var(--text);
+    background: #21262d;
+  }
+
+  .tab .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--info);
+  }
+
+  .editor-wrap {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .line-numbers {
+    padding: 14px 10px 14px 14px;
+    background: var(--editor-bg);
+    color: var(--line-num);
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    user-select: none;
+    text-align: right;
+    overflow: hidden;
+    min-width: 48px;
+    white-space: pre;
+    border-right: 1px solid var(--border);
+  }
+
+  #code-editor {
+    flex: 1;
+    background: var(--editor-bg);
+    color: var(--text);
+    border: none;
+    outline: none;
+    padding: 14px;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    resize: none;
+    tab-size: 2;
+    overflow-y: auto;
+    white-space: pre;
+    overflow-x: auto;
+    caret-color: #fff;
+  }
+
+  /* ── Right panel ── */
+  .right-panel {
+    width: 420px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  /* Config section */
+  .config-section {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 16px;
+    flex-shrink: 0;
+  }
+
+  .config-section h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+
+  .config-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .config-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .config-field label {
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .config-field select,
+  .config-field input {
+    width: 100%;
+  }
+
+  .config-field.full { grid-column: 1 / -1; }
+
+  /* Compile button */
+  .compile-btn {
+    margin: 14px 16px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    padding: 10px 0;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: background 0.15s;
+    flex-shrink: 0;
+  }
+
+  .compile-btn:hover:not(:disabled) { background: var(--accent-h); }
+  .compile-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .compile-btn.compiling {
+    background: #1f6feb;
+  }
+
+  /* Spinner */
+  .spinner {
+    width: 16px; height: 16px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: none;
+  }
+
+  .compile-btn.compiling .spinner { display: block; }
+  .compile-btn.compiling .btn-icon { display: none; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Output panel */
+  .output-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .output-header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 6px 16px;
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .output-badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 99px;
+    display: none;
+  }
+
+  .output-badge.success { background: #1a4731; color: var(--success); display: inline-block; }
+  .output-badge.error   { background: #3d1a1a; color: var(--danger);  display: inline-block; }
+  .output-badge.info    { background: #1a2a3d; color: var(--info);    display: inline-block; }
+
+  #output {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 16px;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    background: var(--bg);
+    color: var(--muted);
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  #output .line-success { color: var(--success); }
+  #output .line-error   { color: var(--danger); }
+  #output .line-warn    { color: var(--warn); }
+  #output .line-info    { color: var(--info); }
+  #output .line-dim     { color: #555; }
+
+  /* Download btn */
+  .download-btn {
+    margin: 12px 16px;
+    background: #1f2937;
+    color: var(--info);
+    border: 1px solid var(--info);
+    border-radius: var(--radius);
+    padding: 9px 0;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: background 0.15s;
+    flex-shrink: 0;
+    text-decoration: none;
+  }
+
+  .download-btn:hover { background: #172033; }
+  .download-btn.visible { display: flex; }
+
+  /* Status bar */
+  footer {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 4px 14px;
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
+  }
+
+  footer .status-ok   { color: var(--success); }
+  footer .status-err  { color: var(--danger); }
+  footer .status-busy { color: var(--info); }
+
+  #char-count { margin-left: auto; }
+
+  /* Token modal */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 999;
+  }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 28px 32px;
+    width: 360px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .modal h2 { font-size: 16px; }
+  .modal p  { font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+  .modal input {
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .modal-btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    padding: 9px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .modal-btn:hover { background: var(--accent-h); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- Token modal -->
+<div class="modal-overlay" id="token-modal">
+  <div class="modal">
+    <h2>🔐 Server Token</h2>
+    <p>Enter your <code>HYPERWISOR_SECRET</code> to authenticate with the compile server.</p>
+    <input type="password" id="token-input" placeholder="Enter secret token..." />
+    <button class="modal-btn" onclick="saveToken()">Connect</button>
+  </div>
+</div>
+
+<!-- Header -->
+<header>
+  <div class="logo">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+    </svg>
+    Hyperwisor Firmware Compiler
+  </div>
+  <div class="spacer"></div>
+  <div class="settings-row">
+    <span class="field-label">Server:</span>
+    <input type="text" id="server-url" value="https://hyperwisor-compile-server.onrender.com" style="width:340px;" />
+    <button onclick="showTokenModal()" style="background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:var(--radius);padding:5px 10px;font-size:12px;cursor:pointer;">
+      🔑 Token
+    </button>
+  </div>
+</header>
+
+<!-- Main -->
+<div class="main">
+
+  <!-- Editor -->
+  <div class="editor-panel">
+    <div class="editor-toolbar">
+      <div class="tab active">
+        <span class="dot"></span>
+        sketch.ino
+      </div>
+      <div style="margin-left:auto;display:flex;gap:8px;">
+        <button onclick="clearEditor()" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:var(--radius);padding:3px 10px;font-size:11px;cursor:pointer;">Clear</button>
+        <button onclick="loadExample()" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:var(--radius);padding:3px 10px;font-size:11px;cursor:pointer;">Load Example</button>
+      </div>
+    </div>
+    <div class="editor-wrap">
+      <div class="line-numbers" id="line-numbers">1</div>
+      <textarea id="code-editor" spellcheck="false"
+        placeholder="// Paste your .ino code here..."
+      ></textarea>
+    </div>
+  </div>
+
+  <!-- Right panel -->
+  <div class="right-panel">
+
+    <!-- Config -->
+    <div class="config-section">
+      <h3>Build Configuration</h3>
+      <div class="config-grid">
+
+        <div class="config-field">
+          <label>Board FQBN</label>
+          <select id="cfg-board">
+            <option value="esp32:esp32:esp32">ESP32 Dev Module</option>
+            <option value="esp32:esp32:esp32s3">ESP32-S3</option>
+            <option value="esp32:esp32:esp32s2">ESP32-S2</option>
+            <option value="esp32:esp32:esp32c3">ESP32-C3</option>
+            <option value="esp32:esp32:esp32wrover">ESP32 WROVER</option>
+          </select>
+        </div>
+
+        <div class="config-field">
+          <label>Partition Scheme</label>
+          <select id="cfg-partition">
+            <option value="min_spiffs">Minimal SPIFFS (1.9MB+OTA)</option>
+            <option value="default">Default (1.25MB+OTA)</option>
+            <option value="huge_app">Huge App (3MB, no OTA)</option>
+            <option value="no_ota">No OTA (2MB)</option>
+          </select>
+        </div>
+
+        <div class="config-field">
+          <label>Flash Mode</label>
+          <select id="cfg-flash-mode">
+            <option value="qio">QIO (fastest)</option>
+            <option value="qout">QOUT</option>
+            <option value="dio">DIO</option>
+            <option value="dout">DOUT</option>
+          </select>
+        </div>
+
+        <div class="config-field">
+          <label>Flash Frequency</label>
+          <select id="cfg-flash-freq">
+            <option value="80m">80 MHz</option>
+            <option value="40m">40 MHz</option>
+          </select>
+        </div>
+
+        <div class="config-field full">
+          <label>Extra Libraries (comma-separated)</label>
+          <input type="text" id="cfg-libraries" placeholder="e.g. DHT sensor library, Adafruit SSD1306@2.5.7" />
+        </div>
+
+        <div class="config-field full">
+          <label>Product ID</label>
+          <input type="text" id="cfg-product-id" placeholder="UUID of your product" />
+        </div>
+
+        <div class="config-field">
+          <label>Version</label>
+          <input type="text" id="cfg-version" value="1.0.0" />
+        </div>
+
+        <div class="config-field">
+          <label>Erase Flash First</label>
+          <select id="cfg-erase">
+            <option value="true">Yes (clean build)</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Compile button -->
+    <button class="compile-btn" id="compile-btn" onclick="compile()">
+      <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <polygon points="5 3 19 12 5 21 5 3"/>
+      </svg>
+      <div class="spinner"></div>
+      <span id="btn-label">Compile Firmware</span>
+    </button>
+
+    <!-- Output -->
+    <div class="output-panel">
+      <div class="output-header">
+        Output
+        <span class="output-badge" id="output-badge">IDLE</span>
+      </div>
+      <div id="output"><span class="line-dim">// Compilation output will appear here...</span></div>
+    </div>
+
+    <!-- Download -->
+    <a class="download-btn" id="download-btn" href="#" target="_blank">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/>
+        <line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      Download .bin
+    </a>
+
+  </div>
+</div>
+
+<!-- Footer -->
+<footer>
+  <span id="status-msg">Ready</span>
+  <span id="compile-time" style="display:none;"></span>
+  <span id="char-count">0 lines</span>
+</footer>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────
+  let authToken = localStorage.getItem('hw_token') || '';
+  let compiling = false;
+
+  // ── Init ───────────────────────────────────────────────────────
+  window.onload = () => {
+    if (!authToken) showTokenModal();
+    updateLineNumbers();
+    document.getElementById('code-editor').addEventListener('input', onEditorInput);
+    document.getElementById('code-editor').addEventListener('keydown', onEditorKeydown);
+    document.getElementById('code-editor').addEventListener('scroll', syncScroll);
+  };
+
+  // ── Token modal ────────────────────────────────────────────────
+  function showTokenModal() {
+    document.getElementById('token-modal').style.display = 'flex';
+    document.getElementById('token-input').value = authToken;
+    setTimeout(() => document.getElementById('token-input').focus(), 100);
+  }
+
+  function saveToken() {
+    const val = document.getElementById('token-input').value.trim();
+    if (!val) return;
+    authToken = val;
+    localStorage.setItem('hw_token', val);
+    document.getElementById('token-modal').style.display = 'none';
+  }
+
+  document.getElementById('token-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') saveToken();
+  });
+
+  // ── Editor helpers ─────────────────────────────────────────────
+  function onEditorInput() {
+    updateLineNumbers();
+    const lines = document.getElementById('code-editor').value.split('\n').length;
+    document.getElementById('char-count').textContent = `${lines} lines`;
+  }
+
+  function onEditorKeydown(e) {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const el = e.target;
+      const s = el.selectionStart;
+      el.value = el.value.substring(0, s) + '  ' + el.value.substring(el.selectionEnd);
+      el.selectionStart = el.selectionEnd = s + 2;
+      updateLineNumbers();
+    }
+  }
+
+  function updateLineNumbers() {
+    const code = document.getElementById('code-editor').value;
+    const count = (code.match(/\n/g) || []).length + 1;
+    const nums = Array.from({length: count}, (_, i) => i + 1).join('\n');
+    document.getElementById('line-numbers').textContent = nums;
+  }
+
+  function syncScroll() {
+    document.getElementById('line-numbers').scrollTop =
+      document.getElementById('code-editor').scrollTop;
+  }
+
+  function clearEditor() {
+    document.getElementById('code-editor').value = '';
+    onEditorInput();
+  }
+
+  function loadExample() {
+    document.getElementById('code-editor').value = `#include <Arduino.h>
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(2, OUTPUT);
+  Serial.println("Hyperwisor device ready!");
+}
+
+void loop() {
+  digitalWrite(2, HIGH);
+  Serial.println("LED ON");
+  delay(1000);
+  digitalWrite(2, LOW);
+  Serial.println("LED OFF");
+  delay(1000);
+}`;
+    onEditorInput();
+  }
+
+  // ── Output helpers ─────────────────────────────────────────────
+  function setOutput(lines) {
+    const el = document.getElementById('output');
+    el.innerHTML = lines.map(([cls, text]) =>
+      `<span class="${cls}">${escHtml(text)}</span>\n`
+    ).join('');
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function appendOutput(cls, text) {
+    const el = document.getElementById('output');
+    const span = document.createElement('span');
+    span.className = cls;
+    span.textContent = text + '\n';
+    el.appendChild(span);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function setBadge(type, label) {
+    const b = document.getElementById('output-badge');
+    b.className = `output-badge ${type}`;
+    b.textContent = label;
+  }
+
+  function setStatus(msg, cls='') {
+    const el = document.getElementById('status-msg');
+    el.textContent = msg;
+    el.className = cls;
+  }
+
+  // ── Compile ────────────────────────────────────────────────────
+  async function compile() {
+    if (compiling) return;
+
+    const source    = document.getElementById('code-editor').value.trim();
+    const productId = document.getElementById('cfg-product-id').value.trim();
+
+    if (!source) {
+      setOutput([['line-warn', '⚠  Please paste your .ino code first.']]);
+      return;
+    }
+    if (!authToken) { showTokenModal(); return; }
+
+    // Parse libraries
+    const libsRaw = document.getElementById('cfg-libraries').value.trim();
+    const libraries = libsRaw
+      ? libsRaw.split(',').map(s => s.trim()).filter(Boolean)
+      : [];
+
+    const payload = {
+      source,
+      productId:       productId || 'ui-test-' + Date.now(),
+      version:         document.getElementById('cfg-version').value.trim() || '1.0.0',
+      board:           document.getElementById('cfg-board').value,
+      partitionScheme: document.getElementById('cfg-partition').value,
+      flashMode:       document.getElementById('cfg-flash-mode').value,
+      flashFreq:       document.getElementById('cfg-flash-freq').value,
+      eraseFlash:      document.getElementById('cfg-erase').value === 'true',
+      libraries
+    };
+
+    // UI → compiling state
+    compiling = true;
+    const btn = document.getElementById('compile-btn');
+    btn.classList.add('compiling');
+    btn.disabled = true;
+    document.getElementById('btn-label').textContent = 'Compiling...';
+    document.getElementById('download-btn').classList.remove('visible');
+    document.getElementById('compile-time').style.display = 'none';
+    setBadge('info', 'BUILDING');
+    setStatus('Compiling...', 'status-busy');
+
+    const server = document.getElementById('server-url').value.trim();
+    const t0 = Date.now();
+
+    // Clear output
+    document.getElementById('output').innerHTML = '';
+    appendOutput('line-dim',  '──────────────────────────────');
+    appendOutput('line-info', `▶  Sending to ${server}`);
+    appendOutput('line-info', `   Board: ${payload.board}`);
+    appendOutput('line-info', `   Partition: ${payload.partitionScheme}  Flash: ${payload.flashMode} @ ${payload.flashFreq}`);
+    if (libraries.length) appendOutput('line-info', `   Libraries: ${libraries.join(', ')}`);
+    appendOutput('line-dim',  '──────────────────────────────');
+
+    try {
+      const res = await fetch(`${server}/compile`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-hyperwisor-token': authToken
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+
+      let data;
+      try { data = await res.json(); }
+      catch { data = { error: 'Server returned non-JSON response', success: false }; }
+
+      if (data.success) {
+        appendOutput('line-success', `✓  Compilation successful in ${elapsed}s`);
+        appendOutput('line-success', `   Job: ${data.jobId}`);
+        appendOutput('line-success', `   Size: ${(data.sizeBytes / 1024).toFixed(1)} KB`);
+        appendOutput('line-success', `   Built at: ${data.compiledAt}`);
+        if (data.binUrl) {
+          appendOutput('line-info', `   Binary: ${data.binUrl}`);
+          const dl = document.getElementById('download-btn');
+          dl.href = data.binUrl;
+          dl.classList.add('visible');
+        }
+        setBadge('success', 'SUCCESS');
+        setStatus(`✓ Done in ${elapsed}s`, 'status-ok');
+        document.getElementById('compile-time').textContent = `Build: ${elapsed}s`;
+        document.getElementById('compile-time').style.display = 'inline';
+      } else {
+        appendOutput('line-error', `✗  Compilation failed (${elapsed}s)`);
+        appendOutput('line-dim',  '──── stderr ──────────────────');
+        const stderr = data.stderr || data.error || 'Unknown error';
+        stderr.split('\n').forEach(line => {
+          if (!line.trim()) return;
+          const cls = line.includes('error:') ? 'line-error'
+                    : line.includes('warning:') ? 'line-warn'
+                    : 'line-dim';
+          appendOutput(cls, line);
+        });
+        if (data.helpfulMessage) {
+          appendOutput('line-dim',  '──── suggestion ──────────────');
+          appendOutput('line-warn', data.helpfulMessage);
+        }
+        setBadge('error', 'FAILED');
+        setStatus('✗ Build failed', 'status-err');
+      }
+
+    } catch (err) {
+      appendOutput('line-error', `✗  Network error: ${err.message}`);
+      appendOutput('line-warn',  '   Is the server online? Check /health endpoint.');
+      setBadge('error', 'ERROR');
+      setStatus('Network error', 'status-err');
+    }
+
+    // Reset button
+    compiling = false;
+    btn.classList.remove('compiling');
+    btn.disabled = false;
+    document.getElementById('btn-label').textContent = 'Compile Firmware';
+  }
+</script>
+</body>
+</html>
