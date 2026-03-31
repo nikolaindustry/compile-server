@@ -4,10 +4,8 @@ services:
     env: docker
     dockerfilePath: ./Dockerfile
     plan: starter
-    disk:
-      name: arduino-cache
-      mountPath: /root/Arduino
-      sizeGB: 5
+    # Note: Persistent disk removed - no longer needed with async architecture
+    # Libraries are installed on-demand during compilation
     envVars:
       - key: HYPERWISOR_SECRET
         sync: false
