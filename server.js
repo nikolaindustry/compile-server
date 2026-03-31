@@ -168,10 +168,11 @@ async function compileJob(job) {
     addJobLog(job.id, 'Source code written');
     updateJob(job.id, { progress: 30 });
 
-    // Install libraries
-    if (libraries.length > 0) {
-      addJobLog(job.id, `Installing libraries: ${libraries.join(', ')}`);
-      for (const lib of libraries) {
+    // Install libraries (with version pinning for compatibility)
+    const resolvedLibraries = resolveLibraryVersions(libraries);
+    if (resolvedLibraries.length > 0) {
+      addJobLog(job.id, `Installing libraries: ${resolvedLibraries.join(', ')}`);
+      for (const lib of resolvedLibraries) {
         await installLibrary(lib);
       }
     }
@@ -258,6 +259,22 @@ function execPromise(cmd, opts) {
       if (err) reject(new Error(stderr || err.message));
       else resolve({ stdout, stderr });
     });
+  });
+}
+
+// Library version resolver - pins incompatible libraries to working versions
+const LIBRARY_VERSION_MAP = {
+  'WebSockets': '2.3.7',  // Compatible with ESP32 core 2.0.17
+  'Ethernet': '2.0.2'     // Compatible with ESP32 core 2.0.17
+};
+
+function resolveLibraryVersions(libraries) {
+  return libraries.map(lib => {
+    const libName = lib.split('@')[0].trim();
+    // If user specified a version, use it; otherwise use our pinned version
+    if (lib.includes('@')) return lib;
+    const pinnedVersion = LIBRARY_VERSION_MAP[libName];
+    return pinnedVersion ? `${libName}@${pinnedVersion}` : libName;
   });
 }
 
