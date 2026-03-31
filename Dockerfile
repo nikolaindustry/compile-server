@@ -22,18 +22,19 @@ RUN arduino-cli config init && \
     arduino-cli config set board_manager.additional_urls \
     https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
 
-# ── Install ESP32 core 2.0.17 (stable, memory-efficient) ───────
+# ── Install ESP32 core 3.3.7 (matches local working setup) ─────
 RUN arduino-cli core update-index && \
-    arduino-cli core install esp32:esp32@2.0.17
+    arduino-cli core install esp32:esp32@3.3.7
 
 # ── Node.js app ───────────────────────────────────────────────
 WORKDIR /app
 COPY package.json .
 RUN npm install --omit=dev
 
-# Copy only necessary files
+# Copy app files and bundled libraries (matches local Arduino libraries)
 COPY server.js .
 COPY partitions/ ./partitions/
+COPY libraries/ /root/Arduino/libraries/
 
 EXPOSE 3000
 

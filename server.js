@@ -262,10 +262,10 @@ function execPromise(cmd, opts) {
   });
 }
 
-// Library version resolver - pins incompatible libraries to working versions
+// Library version resolver - pins only when necessary for compatibility
 const LIBRARY_VERSION_MAP = {
-  'WebSockets': '2.3.7',  // Compatible with ESP32 core 2.0.17
-  'Ethernet': '2.0.2'     // Compatible with ESP32 core 2.0.17
+  // Add version pins here if specific incompatibilities arise
+  // 'SomeLibrary': '1.2.3'
 };
 
 function resolveLibraryVersions(libraries) {
