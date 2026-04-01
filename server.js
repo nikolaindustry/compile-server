@@ -11,8 +11,6 @@ import { writeFileSync, mkdirSync, rmSync, readFileSync, existsSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 
@@ -59,6 +57,7 @@ const supabase = createClient(
 // ───────────────────────────────────────────────────────────────
 
 app.use(express.json({ limit: '4mb' }));
+app.use(express.static(join(__dirname, 'public')));
 
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -67,14 +66,6 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.status(204).end();
   next();
 });
-
-const auth = (req, res, next) => {
-  const token = req.headers['x-hyperwisor-token'];
-  if (!token || token !== (process.env.HYPERWISOR_SECRET || process.env.COMPILE_SERVER_SECRET)) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  next();
-};
 
 // ───────────────────────────────────────────────────────────────
 // JOB MANAGEMENT
@@ -304,7 +295,7 @@ app.get('/health', (req, res) => {
 });
 
 // Submit compile job
-app.post('/compile', auth, (req, res) => {
+app.post('/compile', (req, res) => {
   const { source, productId } = req.body;
   
   if (!source || !productId) {
@@ -323,7 +314,7 @@ app.post('/compile', auth, (req, res) => {
 });
 
 // Get job status
-app.get('/jobs/:jobId', auth, (req, res) => {
+app.get('/jobs/:jobId', (req, res) => {
   const job = jobQueue.get(req.params.jobId);
   
   if (!job) {
@@ -343,7 +334,7 @@ app.get('/jobs/:jobId', auth, (req, res) => {
 });
 
 // List recent jobs
-app.get('/jobs', auth, (req, res) => {
+app.get('/jobs', (req, res) => {
   const jobs = Array.from(jobQueue.values())
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     .slice(0, 50)

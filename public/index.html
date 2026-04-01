@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hyperwisor Compile Server</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    header {
+      text-align: center;
+      padding: 40px 0;
+      border-bottom: 1px solid #334155;
+      margin-bottom: 30px;
+    }
+    h1 { font-size: 2.5rem; background: linear-gradient(90deg, #3b82f6, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .subtitle { color: #94a3b8; margin-top: 10px; }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+    .card {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 20px;
+      border: 1px solid #334155;
+    }
+    .card h2 {
+      font-size: 1.1rem;
+      margin-bottom: 15px;
+      color: #60a5fa;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    textarea, input, select {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 12px;
+      color: #e2e8f0;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 14px;
+      resize: vertical;
+    }
+    textarea { min-height: 400px; }
+    textarea:focus, input:focus, select:focus {
+      outline: none;
+      border-color: #3b82f6;
+    }
+    .form-group { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; color: #94a3b8; font-size: 0.9rem; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+    button {
+      background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+      color: white;
+      border: none;
+      padding: 14px 28px;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.9; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status {
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 15px;
+      font-family: monospace;
+      font-size: 0.9rem;
+    }
+    .status.success { background: #064e3b; border: 1px solid #10b981; }
+    .status.error { background: #450a0a; border: 1px solid #ef4444; }
+    .status.info { background: #1e3a5f; border: 1px solid #3b82f6; }
+    .status.compiling { background: #422006; border: 1px solid #f59e0b; }
+    .logs {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 15px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 0.85rem;
+      margin-top: 15px;
+    }
+    .log-entry { margin: 3px 0; color: #94a3b8; }
+    .log-entry.error { color: #ef4444; }
+    .log-entry.success { color: #10b981; }
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: #334155;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+      transition: width 0.3s;
+    }
+    .download-btn {
+      background: #10b981;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const DEFAULT_SKETCH = `#include <WiFi.h>
+#include <WebSocketsClient.h>
+
+const char* ssid = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
+
+WebSocketsClient webSocket;
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+  
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  
+  Serial.println("\\nConnected to WiFi");
+  
+  webSocket.begin("ws://example.com", 80, "/");
+}
+
+void loop() {
+  webSocket.loop();
+}`;
+
+    function App() {
+      const [source, setSource] = useState(DEFAULT_SKETCH);
+      const [productId, setProductId] = useState('test-product');
+      const [version, setVersion] = useState('1.0.0');
+      const [board, setBoard] = useState('esp32:esp32:esp32');
+      const [libraries, setLibraries] = useState('');
+      const [status, setStatus] = useState(null);
+      const [logs, setLogs] = useState([]);
+      const [progress, setProgress] = useState(0);
+      const [result, setResult] = useState(null);
+      const [isCompiling, setIsCompiling] = useState(false);
+
+      const addLog = (message, type = 'info') => {
+        setLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message, type }]);
+      };
+
+      const compile = async () => {
+        setIsCompiling(true);
+        setStatus({ type: 'compiling', message: 'Submitting compile job...' });
+        setLogs([]);
+        setProgress(10);
+        setResult(null);
+
+        try {
+          // Submit job
+          const submitRes = await fetch('/compile', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              source,
+              productId,
+              version,
+              board,
+              libraries: libraries.split(',').map(l => l.trim()).filter(Boolean)
+            })
+          });
+
+          const submitData = await submitRes.json();
+          
+          if (!submitRes.ok || !submitData.success) {
+            throw new Error(submitData.error || 'Failed to submit job');
+          }
+
+          const jobId = submitData.jobId;
+          addLog(`Job submitted: ${jobId}`);
+          setProgress(20);
+
+          // Poll for status
+          const pollInterval = setInterval(async () => {
+            try {
+              const statusRes = await fetch(`/jobs/${jobId}`);
+              const jobStatus = await statusRes.json();
+
+              setProgress(jobStatus.progress || 20);
+
+              // Update logs
+              if (jobStatus.logs) {
+                jobStatus.logs.forEach(log => {
+                  if (!logs.find(l => l.message === log.message)) {
+                    addLog(log.message);
+                  }
+                });
+              }
+
+              if (jobStatus.status === 'completed') {
+                clearInterval(pollInterval);
+                setStatus({ type: 'success', message: 'Compilation successful!' });
+                setResult(jobStatus.result);
+                setProgress(100);
+                setIsCompiling(false);
+              } else if (jobStatus.status === 'failed') {
+                clearInterval(pollInterval);
+                setStatus({ type: 'error', message: jobStatus.error });
+                setIsCompiling(false);
+              } else {
+                setStatus({ type: 'compiling', message: `Status: ${jobStatus.status} (${jobStatus.progress}%)` });
+              }
+            } catch (err) {
+              addLog(`Poll error: ${err.message}`, 'error');
+            }
+          }, 2000);
+
+        } catch (err) {
+          setStatus({ type: 'error', message: err.message });
+          addLog(`Error: ${err.message}`, 'error');
+          setIsCompiling(false);
+        }
+      };
+
+      return (
+        <div className="container">
+          <header>
+            <h1>⚡ Hyperwisor Compile Server</h1>
+            <p className="subtitle">Compile ESP32 firmware in the cloud</p>
+          </header>
+
+          <div className="grid">
+            <div className="card">
+              <h2>📝 Source Code</h2>
+              <textarea
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+                placeholder="Paste your .ino sketch here..."
+              />
+            </div>
+
+            <div className="card">
+              <h2>⚙️ Build Settings</h2>
+              
+              <div className="form-group">
+                <label>Product ID</label>
+                <input 
+                  type="text" 
+                  value={productId} 
+                  onChange={(e) => setProductId(e.target.value)}
+                />
+              </div>
+
+              <div className="row">
+                <div className="form-group">
+                  <label>Version</label>
+                  <input 
+                    type="text" 
+                    value={version} 
+                    onChange={(e) => setVersion(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Board</label>
+                  <select value={board} onChange={(e) => setBoard(e.target.value)}>
+                    <option value="esp32:esp32:esp32">ESP32 Dev Module</option>
+                    <option value="esp32:esp32:esp32s2">ESP32-S2</option>
+                    <option value="esp32:esp32:esp32s3">ESP32-S3</option>
+                    <option value="esp32:esp32:esp32c3">ESP32-C3</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>Libraries (comma separated)</label>
+                <input 
+                  type="text" 
+                  value={libraries} 
+                  onChange={(e) => setLibraries(e.target.value)}
+                  placeholder="WebSockets, ArduinoJson, etc."
+                />
+              </div>
+
+              <button onClick={compile} disabled={isCompiling}>
+                {isCompiling ? '⏳ Compiling...' : '🔨 Compile Firmware'}
+              </button>
+
+              {status && (
+                <div className={`status ${status.type}`}>
+                  {status.message}
+                  {isCompiling && (
+                    <div className="progress-bar">
+                      <div className="progress-fill" style={{width: `${progress}%`}}></div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {logs.length > 0 && (
+                <div className="logs">
+                  {logs.map((log, i) => (
+                    <div key={i} className={`log-entry ${log.type}`}>
+                      [{log.time}] {log.message}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {result && (
+                <div className="status success">
+                  <div>✅ Binary ready!</div>
+                  <div style={{fontSize: '0.85rem', marginTop: '5px'}}>
+                    Size: {(result.sizeBytes / 1024).toFixed(2)} KB
+                  </div>
+                  <a href={result.binUrl} download className="download-btn" style={{display: 'block', textAlign: 'center', textDecoration: 'none'}}>
+                    ⬇️ Download .bin
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
