@@ -20,7 +20,8 @@ RUN curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/inst
 # ── Configure arduino-cli ──────────────────────────────────────
 RUN arduino-cli config init && \
     arduino-cli config set board_manager.additional_urls \
-    https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+    https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json && \
+    arduino-cli config set directories.user /root/Arduino
 
 # ── Install ESP32 core 3.3.7 ───────────────────────────────────
 RUN arduino-cli core update-index && \
@@ -29,6 +30,16 @@ RUN arduino-cli core update-index && \
 # ── Copy ALL libraries (baked in at build time) ────────────────
 # This matches the exact local Arduino IDE environment
 COPY libraries/ /root/Arduino/libraries/
+
+# ── Verify libraries are in place ─────────────────────────────
+RUN echo "=== Library directories ===" && \
+    ls /root/Arduino/libraries/ && \
+    echo "=== hyperwisor-iot contents ===" && \
+    ls /root/Arduino/libraries/hyperwisor-iot/src/ && \
+    echo "=== arduino-cli config ===" && \
+    arduino-cli config dump | grep -A2 directories && \
+    echo "=== arduino-cli lib list ===" && \
+    arduino-cli lib list
 
 # ── Node.js app ────────────────────────────────────────────────
 WORKDIR /app
