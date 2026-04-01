@@ -7,7 +7,7 @@
 
 import 'dotenv/config';
 import express from 'express';
-import { exec } from 'child_process';
+import { exec, execSync } from 'child_process';
 import { writeFileSync, mkdirSync, rmSync, readFileSync, existsSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
@@ -160,6 +160,12 @@ async function compileJob(job) {
     writeFileSync(`${sketchDir}/${sketchName}/${sketchName}.ino`, cleanSource);
     addJobLog(job.id, 'Source code written');
     updateJob(job.id, { progress: 30 });
+
+    // Clear library cache to ensure fresh installs
+    addJobLog(job.id, 'Clearing library cache...');
+    try {
+      execSync('rm -rf /root/Arduino/libraries/*', { stdio: 'ignore' });
+    } catch (e) {}
 
     // Install libraries (with version pinning for compatibility)
     const resolvedLibraries = resolveLibraryVersions(libraries);
