@@ -204,8 +204,7 @@ async function compile(job) {
       libraryFlags += ` --libraries ${customLibDir}`;
     }
 
-    const cleanFlag = eraseFlash ? ' --clean' : '';
-    const cmd = `arduino-cli compile --fqbn "${fullFqbn}" ${libraryFlags}${cleanFlag} --output-dir ${buildDir} ${sketchDir}/${sketchName}`;
+    const cmd = `arduino-cli compile --fqbn "${fullFqbn}" ${libraryFlags} --output-dir ${buildDir} ${sketchDir}/${sketchName}`;
     
     const { stdout, stderr } = await execPromise(cmd, { timeout: COMPILE_TIMEOUT });
     
@@ -242,7 +241,8 @@ async function compile(job) {
       result: {
         binUrl,
         sizeBytes: binBuffer.length,
-        compiledAt: new Date().toISOString()
+        compiledAt: new Date().toISOString(),
+        eraseFlash: !!eraseFlash  // Pass back to frontend for flash step
       }
     });
 
