@@ -3,8 +3,8 @@ services:
     name: hyperwisor-compile-server
     env: docker
     dockerfilePath: ./Dockerfile
-    plan: starter
-    # Note: Persistent disk removed - no longer needed with async architecture
+    plan: pro
+    # Pro plan: 4GB RAM - required for ESP32 core 3.3.7
     # Libraries are installed on-demand during compilation
     envVars:
       - key: HYPERWISOR_SECRET

@@ -262,10 +262,9 @@ function execPromise(cmd, opts) {
   });
 }
 
-// Library version resolver - pins incompatible libraries to working versions
+// Library version resolver - pins only when necessary
 const LIBRARY_VERSION_MAP = {
-  'WebSockets': '2.3.7',  // Last version compatible with ESP32 core 2.0.17
-  'Ethernet': '2.0.2'     // Compatible with WebSockets 2.3.7
+  // No pins needed for ESP32 3.3.7 - uses latest libraries like local Arduino
 };
 
 function resolveLibraryVersions(libraries) {

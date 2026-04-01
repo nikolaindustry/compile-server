@@ -22,10 +22,10 @@ RUN arduino-cli config init && \
     arduino-cli config set board_manager.additional_urls \
     https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
 
-# ── Install ESP32 core 2.0.17 (memory-efficient, stable) ───────
-# Note: 3.3.7 uses >2GB RAM, 2.0.17 uses ~1.2GB
+# ── Install ESP32 core 3.3.7 (matches local Arduino IDE) ───────
+# Note: Requires 4GB RAM (Render Pro plan)
 RUN arduino-cli core update-index && \
-    arduino-cli core install esp32:esp32@2.0.17
+    arduino-cli core install esp32:esp32@3.3.7
 
 # ── Node.js app ───────────────────────────────────────────────
 WORKDIR /app
