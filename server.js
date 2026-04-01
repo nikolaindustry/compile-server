@@ -128,27 +128,32 @@ async function compile(job) {
 
     // Debug: verify libraries are visible
     try {
+      const { stdout: whoami } = await execPromise('whoami 2>&1', { timeout: 5000 });
+      const { stdout: homeDir } = await execPromise('echo $HOME 2>&1', { timeout: 5000 });
+      log(job.id, `Running as: ${whoami.trim()}, HOME: ${homeDir.trim()}`);
+    } catch (e) {
+      log(job.id, `whoami error: ${e.message}`);
+    }
+    try {
       const { stdout: libList } = await execPromise('arduino-cli lib list 2>&1', { timeout: 10000 });
       log(job.id, `Installed libs:\n${libList}`);
     } catch (e) {
-      log(job.id, `lib list error: ${e.message}`);
+      log(job.id, `lib list: ${e.message}`);
     }
-    try {
-      const { stdout: configDump } = await execPromise('arduino-cli config dump 2>&1', { timeout: 10000 });
-      log(job.id, `Config:\n${configDump}`);
-    } catch (e) {
-      log(job.id, `config dump error: ${e.message}`);
-    }
-    try {
-      const { stdout: lsLibs } = await execPromise('ls -la /root/Arduino/libraries/ 2>&1', { timeout: 5000 });
-      log(job.id, `Library dir:\n${lsLibs}`);
-      const { stdout: lsHW } = await execPromise('ls -laR /root/Arduino/libraries/hyperwisor-iot/ 2>&1', { timeout: 5000 });
-      log(job.id, `hyperwisor-iot dir:\n${lsHW}`);
-    } catch (e) {
-      log(job.id, `ls error: ${e.message}`);
+    // Check both library locations
+    for (const dir of ['/root/Arduino/libraries', '/opt/arduino-libraries', `${process.env.HOME}/Arduino/libraries`]) {
+      try {
+        const { stdout } = await execPromise(`ls ${dir}/ 2>&1`, { timeout: 5000 });
+        log(job.id, `${dir}: ${stdout.trim().split('\n').length} items`);
+      } catch (e) {
+        log(job.id, `${dir}: NOT FOUND`);
+      }
     }
 
-    const cmd = `arduino-cli compile --fqbn ${board} --output-dir ${buildDir} ${sketchDir}/${sketchName}`;
+    // Use --libraries flag to explicitly tell compiler where libraries are
+    const libPath = existsSync('/root/Arduino/libraries') ? '/root/Arduino/libraries' : '/opt/arduino-libraries';
+    log(job.id, `Using library path: ${libPath}`);
+    const cmd = `arduino-cli compile --fqbn ${board} --libraries ${libPath} --output-dir ${buildDir} ${sketchDir}/${sketchName}`;
     
     const { stdout, stderr } = await execPromise(cmd, { timeout: COMPILE_TIMEOUT });
     
@@ -289,9 +294,22 @@ app.listen(PORT, async () => {
   
   // Startup diagnostics
   try {
+    const { stdout: whoami } = await execPromise('whoami 2>&1', { timeout: 5000 });
+    const { stdout: home } = await execPromise('echo $HOME 2>&1', { timeout: 5000 });
+    console.log(`Running as: ${whoami.trim()}, HOME: ${home.trim()}`);
+  } catch (e) {}
+  for (const dir of ['/root/Arduino/libraries', '/opt/arduino-libraries']) {
+    try {
+      const { stdout } = await execPromise(`ls ${dir}/ 2>&1`, { timeout: 5000 });
+      console.log(`${dir}: ${stdout.trim().split('\n').length} libraries found`);
+    } catch (e) {
+      console.log(`${dir}: NOT FOUND`);
+    }
+  }
+  try {
     const { stdout } = await execPromise('arduino-cli lib list 2>&1', { timeout: 10000 });
-    console.log(`\n=== Libraries detected by arduino-cli ===\n${stdout}`);
+    console.log(`\n=== arduino-cli lib list ===\n${stdout}`);
   } catch (e) {
-    console.log(`WARNING: arduino-cli lib list failed: ${e.message}`);
+    console.log(`WARNING: arduino-cli lib list: ${e.message}`);
   }
 });

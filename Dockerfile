@@ -28,30 +28,17 @@ RUN arduino-cli core update-index && \
     arduino-cli core install esp32:esp32@3.3.7
 
 # ── Copy ALL libraries (baked in at build time) ────────────────
-# This matches the exact local Arduino IDE environment
+# Copy to BOTH the user dir AND the app dir for reliability
 COPY libraries/ /root/Arduino/libraries/
+COPY libraries/ /opt/arduino-libraries/
 
-# ── Verify libraries are in place ─────────────────────────────
-RUN echo "========== DEBUG: Full arduino-cli config ==========" && \
-    arduino-cli config dump && \
-    echo "" && \
-    echo "========== DEBUG: /root/Arduino/ tree ==========" && \
-    find /root/Arduino/libraries -maxdepth 2 -type f -name '*.h' | head -50 && \
-    echo "" && \
-    echo "========== DEBUG: hyperwisor-iot full tree ==========" && \
-    find /root/Arduino/libraries/hyperwisor-iot -type f && \
-    echo "" && \
-    echo "========== DEBUG: library.properties ==========" && \
-    cat /root/Arduino/libraries/hyperwisor-iot/library.properties && \
-    echo "" && \
-    echo "========== DEBUG: hyperwisor-iot.h first 5 lines ==========" && \
-    head -5 /root/Arduino/libraries/hyperwisor-iot/src/hyperwisor-iot.h && \
-    echo "" && \
-    echo "========== DEBUG: arduino-cli lib list ==========" && \
+# ── Ensure arduino-cli sees the libraries ──────────────────────
+RUN arduino-cli config set directories.user /root/Arduino && \
+    echo "=== Verify ==" && \
+    ls /root/Arduino/libraries/hyperwisor-iot/src/ && \
     arduino-cli lib list && \
-    echo "" && \
-    echo "========== DEBUG: all library.properties files ==========" && \
-    find /root/Arduino/libraries -maxdepth 2 -name 'library.properties' -exec echo '--- {} ---' \; -exec head -2 {} \;
+    echo "=== whoami ==" && whoami && \
+    echo "=== HOME ==" && echo $HOME
 
 # ── Node.js app ────────────────────────────────────────────────
 WORKDIR /app
