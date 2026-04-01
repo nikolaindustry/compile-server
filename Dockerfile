@@ -4,7 +4,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # ── System dependencies ────────────────────────────────────────
 RUN apt-get update && apt-get install -y \
-    curl ca-certificates python3 python3-pip \
+    curl ca-certificates python3 python3-pip git \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Python dependencies for ESP32 tools ────────────────────────

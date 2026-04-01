@@ -92,11 +92,12 @@ async function processQueue() {
 }
 
 async function compile(job) {
-  const { source, board = 'esp32:esp32:esp32', productId, version = '1.0.0', libraries = [] } = job.data;
+  const { source, board = 'esp32:esp32:esp32', productId, version = '1.0.0', libraries = [], customLibs = [] } = job.data;
   
   const sketchDir = `/tmp/job_${job.id}`;
   const sketchName = 'sketch';
   const buildDir = `${sketchDir}/build`;
+  const customLibDir = `${sketchDir}/custom_libs`;
   const libPath = existsSync('/root/Arduino/libraries') ? '/root/Arduino/libraries' : '/opt/arduino-libraries';
 
   log(job.id, 'Starting compilation...');
@@ -106,8 +107,35 @@ async function compile(job) {
     // Create directories
     mkdirSync(`${sketchDir}/${sketchName}`, { recursive: true });
     mkdirSync(buildDir, { recursive: true });
+    mkdirSync(customLibDir, { recursive: true });
 
-    // Install additional libraries if requested
+    // Clone custom Git libraries if provided
+    const gitLibs = Array.isArray(customLibs) ? customLibs :
+      (typeof customLibs === 'string' && customLibs.trim() ? customLibs.split(',').map(l => l.trim()).filter(Boolean) : []);
+    
+    if (gitLibs.length > 0) {
+      log(job.id, `Cloning ${gitLibs.length} custom Git libraries...`);
+      update(job.id, { progress: 12 });
+      for (const gitUrl of gitLibs) {
+        try {
+          // Extract repo name from URL
+          const repoName = gitUrl.replace(/\.git$/, '').split('/').pop() || 'custom-lib';
+          const clonePath = `${customLibDir}/${repoName}`;
+          
+          log(job.id, `Cloning: ${gitUrl}`);
+          await execPromise(`git clone --depth 1 "${gitUrl}" "${clonePath}"`, { timeout: 60000 });
+          
+          // Verify it has library structure (src/ with .h or root .h)
+          const hasSrc = existsSync(`${clonePath}/src`);
+          const hasLib = existsSync(`${clonePath}/library.properties`);
+          log(job.id, `Cloned: ${repoName} (${hasSrc ? 'src/' : 'flat'} layout${hasLib ? ', has library.properties' : ''})`);
+        } catch (e) {
+          log(job.id, `Warning: Could not clone "${gitUrl}": ${e.message}`);
+        }
+      }
+    }
+
+    // Install additional Arduino registry libraries if requested
     const libList = Array.isArray(libraries) ? libraries : 
       (typeof libraries === 'string' && libraries.trim() ? libraries.split(',').map(l => l.trim()).filter(Boolean) : []);
     
@@ -145,7 +173,15 @@ async function compile(job) {
 
     // Compile
     log(job.id, 'Running compiler...');
-    const cmd = `arduino-cli compile --fqbn ${board} --libraries ${libPath} --output-dir ${buildDir} ${sketchDir}/${sketchName}`;
+    // Build library paths: pre-baked + newly installed + custom git repos
+    let libraryFlags = `--libraries ${libPath}`;
+    if (libList.length > 0 && existsSync('/root/Arduino/libraries')) {
+      libraryFlags += ' --libraries /root/Arduino/libraries';
+    }
+    if (gitLibs.length > 0) {
+      libraryFlags += ` --libraries ${customLibDir}`;
+    }
+    const cmd = `arduino-cli compile --fqbn ${board} ${libraryFlags} --output-dir ${buildDir} ${sketchDir}/${sketchName}`;
     
     const { stdout, stderr } = await execPromise(cmd, { timeout: COMPILE_TIMEOUT });
     
@@ -235,7 +271,7 @@ app.get('/health', (req, res) => {
 
 // Submit compile job
 app.post('/compile', (req, res) => {
-  const { source, productId = 'test', version, board, libraries } = req.body;
+  const { source, productId = 'test', version, board, libraries, customLibs } = req.body;
   
   if (!source) {
     return res.status(400).json({ error: 'source is required' });

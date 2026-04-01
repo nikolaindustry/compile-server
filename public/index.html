@@ -162,6 +162,7 @@ void loop() {
       const [version, setVersion] = useState('1.0.0');
       const [board, setBoard] = useState('esp32:esp32:esp32');
       const [libraries, setLibraries] = useState('');
+      const [customLibs, setCustomLibs] = useState('');
       const [status, setStatus] = useState(null);
       const [logs, setLogs] = useState([]);
       const [progress, setProgress] = useState(0);
@@ -189,7 +190,8 @@ void loop() {
               productId,
               version,
               board,
-              libraries: libraries.split(',').map(l => l.trim()).filter(Boolean)
+              libraries: libraries.split(',').map(l => l.trim()).filter(Boolean),
+              customLibs: customLibs.split(',').map(l => l.trim()).filter(Boolean)
             })
           });
 
@@ -301,6 +303,16 @@ void loop() {
                   value={libraries} 
                   onChange={(e) => setLibraries(e.target.value)}
                   placeholder="e.g. DHT sensor library, Servo (29 pre-installed)"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Custom Git Libraries (comma separated URLs, optional)</label>
+                <input 
+                  type="text" 
+                  value={customLibs} 
+                  onChange={(e) => setCustomLibs(e.target.value)}
+                  placeholder="https://github.com/user/my-library.git"
                 />
               </div>
 
