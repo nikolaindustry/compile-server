@@ -257,7 +257,7 @@ function execPromise(cmd, opts) {
 
 // Library version resolver - pins only when necessary
 const LIBRARY_VERSION_MAP = {
-  // No pins needed for ESP32 3.3.7 - uses latest libraries like local Arduino
+  'WebSockets': '2.4.1',  // Compatible with ESP32 core 3.3.7 (fixes base64 conflict)
 };
 
 function resolveLibraryVersions(libraries) {
