@@ -125,6 +125,29 @@ async function compile(job) {
 
     // Compile
     log(job.id, 'Running compiler...');
+
+    // Debug: verify libraries are visible
+    try {
+      const { stdout: libList } = await execPromise('arduino-cli lib list 2>&1', { timeout: 10000 });
+      log(job.id, `Installed libs:\n${libList}`);
+    } catch (e) {
+      log(job.id, `lib list error: ${e.message}`);
+    }
+    try {
+      const { stdout: configDump } = await execPromise('arduino-cli config dump 2>&1', { timeout: 10000 });
+      log(job.id, `Config:\n${configDump}`);
+    } catch (e) {
+      log(job.id, `config dump error: ${e.message}`);
+    }
+    try {
+      const { stdout: lsLibs } = await execPromise('ls -la /root/Arduino/libraries/ 2>&1', { timeout: 5000 });
+      log(job.id, `Library dir:\n${lsLibs}`);
+      const { stdout: lsHW } = await execPromise('ls -laR /root/Arduino/libraries/hyperwisor-iot/ 2>&1', { timeout: 5000 });
+      log(job.id, `hyperwisor-iot dir:\n${lsHW}`);
+    } catch (e) {
+      log(job.id, `ls error: ${e.message}`);
+    }
+
     const cmd = `arduino-cli compile --fqbn ${board} --output-dir ${buildDir} ${sketchDir}/${sketchName}`;
     
     const { stdout, stderr } = await execPromise(cmd, { timeout: COMPILE_TIMEOUT });
@@ -259,8 +282,16 @@ setInterval(() => {
 // ───────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`✓ Compile Server running on port ${PORT}`);
+app.listen(PORT, async () => {
+  console.log(`\u2713 Compile Server running on port ${PORT}`);
   console.log(`  UI: http://localhost:${PORT}`);
   console.log(`  Health: http://localhost:${PORT}/health`);
+  
+  // Startup diagnostics
+  try {
+    const { stdout } = await execPromise('arduino-cli lib list 2>&1', { timeout: 10000 });
+    console.log(`\n=== Libraries detected by arduino-cli ===\n${stdout}`);
+  } catch (e) {
+    console.log(`WARNING: arduino-cli lib list failed: ${e.message}`);
+  }
 });

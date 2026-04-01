@@ -32,14 +32,26 @@ RUN arduino-cli core update-index && \
 COPY libraries/ /root/Arduino/libraries/
 
 # ── Verify libraries are in place ─────────────────────────────
-RUN echo "=== Library directories ===" && \
-    ls /root/Arduino/libraries/ && \
-    echo "=== hyperwisor-iot contents ===" && \
-    ls /root/Arduino/libraries/hyperwisor-iot/src/ && \
-    echo "=== arduino-cli config ===" && \
-    arduino-cli config dump | grep -A2 directories && \
-    echo "=== arduino-cli lib list ===" && \
-    arduino-cli lib list
+RUN echo "========== DEBUG: Full arduino-cli config ==========" && \
+    arduino-cli config dump && \
+    echo "" && \
+    echo "========== DEBUG: /root/Arduino/ tree ==========" && \
+    find /root/Arduino/libraries -maxdepth 2 -type f -name '*.h' | head -50 && \
+    echo "" && \
+    echo "========== DEBUG: hyperwisor-iot full tree ==========" && \
+    find /root/Arduino/libraries/hyperwisor-iot -type f && \
+    echo "" && \
+    echo "========== DEBUG: library.properties ==========" && \
+    cat /root/Arduino/libraries/hyperwisor-iot/library.properties && \
+    echo "" && \
+    echo "========== DEBUG: hyperwisor-iot.h first 5 lines ==========" && \
+    head -5 /root/Arduino/libraries/hyperwisor-iot/src/hyperwisor-iot.h && \
+    echo "" && \
+    echo "========== DEBUG: arduino-cli lib list ==========" && \
+    arduino-cli lib list && \
+    echo "" && \
+    echo "========== DEBUG: all library.properties files ==========" && \
+    find /root/Arduino/libraries -maxdepth 2 -name 'library.properties' -exec echo '--- {} ---' \; -exec head -2 {} \;
 
 # ── Node.js app ────────────────────────────────────────────────
 WORKDIR /app
