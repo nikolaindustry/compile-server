@@ -5,6 +5,7 @@
  * Approach: Queue jobs, compile in background, poll for status
  */
 
+import 'dotenv/config';
 import express from 'express';
 import { exec } from 'child_process';
 import { writeFileSync, mkdirSync, rmSync, readFileSync, existsSync } from 'fs';
