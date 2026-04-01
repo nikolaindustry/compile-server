@@ -9,7 +9,6 @@
 #include <Update.h>
 #include <DNSServer.h>
 #include <HTTPClient.h>
-#include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 #include <time.h>
 #include <sys/time.h>

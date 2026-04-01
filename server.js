@@ -1,82 +1,45 @@
 /**
- * Hyperwisor Compile Server - Async Queue Architecture
+ * Hyperwisor Compile Server - Clean Implementation
  * 
- * Solves: Memory issues, timeouts, complex library management
- * Approach: Queue jobs, compile in background, poll for status
+ * Simple approach: All libraries baked into Docker image at build time.
+ * No dynamic library installation - just compile.
  */
 
 import 'dotenv/config';
 import express from 'express';
-import { exec, execSync } from 'child_process';
+import { exec } from 'child_process';
 import { writeFileSync, mkdirSync, rmSync, readFileSync, existsSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 // ───────────────────────────────────────────────────────────────
-// CONFIGURATION
+// CONFIG
 // ───────────────────────────────────────────────────────────────
 
-const CONFIG = {
-  // Compile jobs timeout after 5 minutes (Render Standard has no hard limit)
-  COMPILE_TIMEOUT_MS: 5 * 60 * 1000,
-  
-  // Max concurrent compilations (to prevent OOM)
-  MAX_CONCURRENT_JOBS: 1,
-  
-  // Cleanup completed jobs after 30 minutes
-  JOB_RETENTION_MS: 30 * 60 * 1000,
-  
-  // Partition schemes
-  PARTITIONS: {
-    min_spiffs: { app: '1.9MB', spiffs: '128KB', ota: true },
-    default: { app: '1.25MB', spiffs: '1.5MB', ota: true },
-    huge_app: { app: '3MB', spiffs: '0', ota: false },
-    no_ota: { app: '2MB', spiffs: '1MB', ota: false }
-  }
-};
+const COMPILE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+const PARTITIONS_DIR = join(__dirname, 'partitions');
 
-// ───────────────────────────────────────────────────────────────
-// STATE MANAGEMENT
-// ───────────────────────────────────────────────────────────────
-
-// In-memory job queue (for single-instance deployment)
-// For multi-instance, use Redis or database queue
-const jobQueue = new Map();
-let activeJobs = 0;
-
-// Supabase client
-const supabase = createClient(
+// Supabase client (optional - for binary upload)
+const supabase = process.env.SUPABASE_URL ? createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
-);
+) : null;
 
 // ───────────────────────────────────────────────────────────────
-// MIDDLEWARE
+// JOB QUEUE (in-memory)
 // ───────────────────────────────────────────────────────────────
 
-app.use(express.json({ limit: '4mb' }));
-app.use(express.static(join(__dirname, 'public')));
-
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-hyperwisor-token, Authorization');
-  if (req.method === 'OPTIONS') return res.status(204).end();
-  next();
-});
-
-// ───────────────────────────────────────────────────────────────
-// JOB MANAGEMENT
-// ───────────────────────────────────────────────────────────────
+const jobs = new Map();
+let processing = false;
 
 function createJob(data) {
-  const jobId = randomUUID();
   const job = {
-    id: jobId,
+    id: randomUUID(),
     status: 'queued',
     progress: 0,
     createdAt: new Date().toISOString(),
@@ -86,170 +49,126 @@ function createJob(data) {
     error: null,
     logs: []
   };
-  jobQueue.set(jobId, job);
+  jobs.set(job.id, job);
   processQueue();
   return job;
 }
 
-function updateJob(jobId, updates) {
-  const job = jobQueue.get(jobId);
-  if (!job) return;
-  Object.assign(job, updates, { updatedAt: new Date().toISOString() });
-}
-
-function addJobLog(jobId, message) {
-  const job = jobQueue.get(jobId);
+function log(jobId, msg) {
+  const job = jobs.get(jobId);
   if (job) {
-    job.logs.push({ time: new Date().toISOString(), message });
-    console.log(`[${jobId}] ${message}`);
+    job.logs.push({ time: new Date().toISOString(), message: msg });
+    job.updatedAt = new Date().toISOString();
+    console.log(`[${jobId.slice(0,8)}] ${msg}`);
   }
 }
 
+function update(jobId, data) {
+  const job = jobs.get(jobId);
+  if (job) Object.assign(job, data, { updatedAt: new Date().toISOString() });
+}
+
 // ───────────────────────────────────────────────────────────────
-// COMPILATION WORKER
+// COMPILE WORKER
 // ───────────────────────────────────────────────────────────────
 
 async function processQueue() {
-  if (activeJobs >= CONFIG.MAX_CONCURRENT_JOBS) return;
+  if (processing) return;
   
-  const queuedJob = Array.from(jobQueue.values()).find(j => j.status === 'queued');
-  if (!queuedJob) return;
+  const job = Array.from(jobs.values()).find(j => j.status === 'queued');
+  if (!job) return;
   
-  activeJobs++;
-  updateJob(queuedJob.id, { status: 'compiling', progress: 10 });
+  processing = true;
+  update(job.id, { status: 'compiling', progress: 10 });
   
   try {
-    await compileJob(queuedJob);
-  } catch (error) {
-    updateJob(queuedJob.id, { 
-      status: 'failed', 
-      error: error.message,
-      progress: 0 
-    });
+    await compile(job);
+  } catch (err) {
+    update(job.id, { status: 'failed', error: err.message, progress: 0 });
   } finally {
-    activeJobs--;
-    setTimeout(processQueue, 100); // Process next job
+    processing = false;
+    setTimeout(processQueue, 100);
   }
 }
 
-async function compileJob(job) {
-  const { 
-    source, board, productId, version, 
-    libraries = [], partitionScheme = 'min_spiffs',
-    flashMode = 'qio', flashFreq = '80m', flashSize = '4MB',
-    eraseFlash = true 
-  } = job.data;
-
-  const sketchName = 'sketch';
+async function compile(job) {
+  const { source, board = 'esp32:esp32:esp32', productId, version = '1.0.0' } = job.data;
+  
   const sketchDir = `/tmp/job_${job.id}`;
+  const sketchName = 'sketch';
   const buildDir = `${sketchDir}/build`;
 
-  addJobLog(job.id, 'Starting compilation...');
-  updateJob(job.id, { progress: 20 });
+  log(job.id, 'Starting compilation...');
+  update(job.id, { progress: 20 });
 
   try {
-    // Setup directories
+    // Create directories
     mkdirSync(`${sketchDir}/${sketchName}`, { recursive: true });
     mkdirSync(buildDir, { recursive: true });
-    
-    // Write source
+
+    // Write source code
     const cleanSource = source
       .replace(/^```(?:cpp|c\+\+|ino|arduino)?\s*/i, '')
       .replace(/\s*```\s*$/i, '')
       .trim();
     writeFileSync(`${sketchDir}/${sketchName}/${sketchName}.ino`, cleanSource);
-    addJobLog(job.id, 'Source code written');
-    updateJob(job.id, { progress: 30 });
+    log(job.id, 'Source code written');
+    update(job.id, { progress: 30 });
 
-    // Clear library cache to ensure fresh installs (but keep bundled libraries)
-    addJobLog(job.id, 'Clearing library cache...');
-    try {
-      // Only remove libraries that were installed by arduino-cli (not bundled)
-      execSync('find /root/Arduino/libraries -maxdepth 1 -type d ! -name "hyperwisor-iot" -exec rm -rf {} + 2>/dev/null || true', { stdio: 'ignore', shell: true });
-    } catch (e) {}
-
-    // Install libraries (with version pinning for compatibility)
-    const resolvedLibraries = resolveLibraryVersions(libraries);
-    if (resolvedLibraries.length > 0) {
-      addJobLog(job.id, `Installing libraries: ${resolvedLibraries.join(', ')}`);
-      for (const lib of resolvedLibraries) {
-        await installLibrary(lib);
-      }
-    }
-    updateJob(job.id, { progress: 50 });
-
-    // Setup partition table
-    const partitionFile = join(__dirname, 'partitions', `${partitionScheme}.csv`);
+    // Copy partition table
+    const partitionFile = join(PARTITIONS_DIR, 'min_spiffs.csv');
     if (existsSync(partitionFile)) {
-      writeFileSync(
-        `${sketchDir}/${sketchName}/partitions.csv`,
-        readFileSync(partitionFile)
-      );
+      writeFileSync(`${sketchDir}/${sketchName}/partitions.csv`, readFileSync(partitionFile));
+      log(job.id, 'Partition table configured');
     }
-    addJobLog(job.id, 'Partition table configured');
-    updateJob(job.id, { progress: 60 });
+    update(job.id, { progress: 40 });
 
-    // Build command
-    const buildProps = [
-      `build.extra_flags=-DARDUINO_FLASH_MODE_${flashMode.toUpperCase()}`,
-      `build.extra_flags=-DARDUINO_FLASH_FREQ_${flashFreq.toUpperCase()}`,
-      `build.extra_flags=-DARDUINO_FLASH_SIZE_${flashSize.toUpperCase()}`
-    ];
+    // Compile
+    log(job.id, 'Running compiler...');
+    const cmd = `arduino-cli compile --fqbn ${board} --output-dir ${buildDir} ${sketchDir}/${sketchName}`;
+    
+    const { stdout, stderr } = await execPromise(cmd, { timeout: COMPILE_TIMEOUT });
+    
+    log(job.id, 'Compilation successful!');
+    update(job.id, { progress: 80 });
 
-    const cmd = [
-      'arduino-cli compile',
-      `--fqbn ${board}`,
-      `--output-dir ${buildDir}`,
-      eraseFlash ? '--clean' : '',
-      buildProps.map(p => `--build-property "${p}"`).join(' '),
-      `${sketchDir}/${sketchName}`
-    ].join(' ');
-
-    addJobLog(job.id, 'Running compiler...');
-    updateJob(job.id, { progress: 70 });
-
-    // Execute compilation
-    const { stdout, stderr } = await execPromise(cmd, { 
-      timeout: CONFIG.COMPILE_TIMEOUT_MS 
-    });
-
-    addJobLog(job.id, 'Compilation successful');
-    updateJob(job.id, { progress: 90 });
-
-    // Upload to Supabase
+    // Read binary
     const binPath = `${buildDir}/${sketchName}.ino.bin`;
     const binBuffer = readFileSync(binPath);
-    const storagePath = `${productId}/${version}_${Date.now()}.bin`;
 
-    const { error: uploadError } = await supabase.storage
-      .from('firmware')
-      .upload(storagePath, binBuffer, {
-        contentType: 'application/octet-stream',
-        upsert: false
-      });
-
-    if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
-
-    const { data: urlData } = supabase.storage
-      .from('firmware')
-      .getPublicUrl(storagePath);
+    // Upload to Supabase (if configured)
+    let binUrl = null;
+    if (supabase && productId) {
+      const storagePath = `${productId}/${version}_${Date.now()}.bin`;
+      const { error: uploadError } = await supabase.storage
+        .from('firmware')
+        .upload(storagePath, binBuffer, { contentType: 'application/octet-stream' });
+      
+      if (!uploadError) {
+        const { data } = supabase.storage.from('firmware').getPublicUrl(storagePath);
+        binUrl = data.publicUrl;
+        log(job.id, 'Binary uploaded to storage');
+      }
+    }
+    
+    update(job.id, { progress: 100 });
 
     // Cleanup
     cleanup(sketchDir);
 
-    updateJob(job.id, {
+    // Success
+    update(job.id, {
       status: 'completed',
-      progress: 100,
       result: {
-        binUrl: urlData.publicUrl,
+        binUrl,
         sizeBytes: binBuffer.length,
         compiledAt: new Date().toISOString()
       }
     });
 
-  } catch (error) {
+  } catch (err) {
     cleanup(sketchDir);
-    throw error;
+    throw err;
   }
 }
 
@@ -262,42 +181,27 @@ function execPromise(cmd, opts) {
   });
 }
 
-// Library version resolver - pins only when necessary
-const LIBRARY_VERSION_MAP = {
-  'WebSockets': '2.4.1',  // Compatible with ESP32 core 3.3.7 (fixes base64 conflict)
-};
-
-function resolveLibraryVersions(libraries) {
-  return libraries.map(lib => {
-    const libName = lib.split('@')[0].trim();
-    // If user specified a version, use it; otherwise use our pinned version
-    if (lib.includes('@')) return lib;
-    const pinnedVersion = LIBRARY_VERSION_MAP[libName];
-    return pinnedVersion ? `${libName}@${pinnedVersion}` : libName;
-  });
-}
-
-async function installLibrary(libSpec) {
-  const libName = libSpec.split('@')[0].trim();
-  
-  // If version is specified, uninstall existing first to ensure correct version
-  if (libSpec.includes('@')) {
-    try {
-      await execPromise(`arduino-cli lib uninstall "${libName}"`, { timeout: 30000 });
-    } catch (e) {
-      // Ignore if not installed
-    }
-  }
-  
-  return execPromise(`arduino-cli lib install "${libSpec}"`, { timeout: 60000 });
-}
-
 function cleanup(dir) {
   try { rmSync(dir, { recursive: true, force: true }); } catch {}
 }
 
 // ───────────────────────────────────────────────────────────────
-// API ENDPOINTS
+// MIDDLEWARE
+// ───────────────────────────────────────────────────────────────
+
+app.use(express.json({ limit: '4mb' }));
+app.use(express.static(join(__dirname, 'public')));
+
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  next();
+});
+
+// ───────────────────────────────────────────────────────────────
+// ROUTES
 // ───────────────────────────────────────────────────────────────
 
 // Health check
@@ -305,21 +209,16 @@ app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
-    queue: {
-      total: jobQueue.size,
-      active: activeJobs,
-      queued: Array.from(jobQueue.values()).filter(j => j.status === 'queued').length
-    }
+    jobs: { total: jobs.size, processing: processing ? 1 : 0 }
   });
 });
 
 // Submit compile job
 app.post('/compile', (req, res) => {
-  const { source, productId } = req.body;
+  const { source, productId = 'test', version, board } = req.body;
   
-  if (!source || !productId) {
-    return res.status(400).json({ error: 'source and productId required' });
+  if (!source) {
+    return res.status(400).json({ error: 'source is required' });
   }
 
   const job = createJob(req.body);
@@ -328,55 +227,32 @@ app.post('/compile', (req, res) => {
     success: true,
     jobId: job.id,
     status: job.status,
-    message: 'Compilation job queued',
     pollUrl: `/jobs/${job.id}`
   });
 });
 
 // Get job status
-app.get('/jobs/:jobId', (req, res) => {
-  const job = jobQueue.get(req.params.jobId);
-  
-  if (!job) {
-    return res.status(404).json({ error: 'Job not found' });
-  }
-
-  res.json({
-    id: job.id,
-    status: job.status,
-    progress: job.progress,
-    createdAt: job.createdAt,
-    updatedAt: job.updatedAt,
-    logs: job.logs.slice(-20), // Last 20 log entries
-    result: job.result,
-    error: job.error
-  });
+app.get('/jobs/:id', (req, res) => {
+  const job = jobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  res.json(job);
 });
 
-// List recent jobs
+// List jobs
 app.get('/jobs', (req, res) => {
-  const jobs = Array.from(jobQueue.values())
+  const list = Array.from(jobs.values())
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, 50)
-    .map(j => ({
-      id: j.id,
-      status: j.status,
-      progress: j.progress,
-      createdAt: j.createdAt
-    }));
-  
-  res.json({ jobs });
+    .slice(0, 20);
+  res.json({ jobs: list });
 });
 
-// Cleanup old jobs periodically
+// Cleanup old jobs every 10 minutes
 setInterval(() => {
-  const cutoff = Date.now() - CONFIG.JOB_RETENTION_MS;
-  for (const [id, job] of jobQueue) {
-    if (new Date(job.updatedAt).getTime() < cutoff) {
-      jobQueue.delete(id);
-    }
+  const cutoff = Date.now() - 30 * 60 * 1000;
+  for (const [id, job] of jobs) {
+    if (new Date(job.updatedAt).getTime() < cutoff) jobs.delete(id);
   }
-}, 60000);
+}, 10 * 60 * 1000);
 
 // ───────────────────────────────────────────────────────────────
 // START
@@ -384,7 +260,7 @@ setInterval(() => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✓ Compile Server (Async) running on port ${PORT}`);
-  console.log(`  Max concurrent jobs: ${CONFIG.MAX_CONCURRENT_JOBS}`);
-  console.log(`  Compile timeout: ${CONFIG.COMPILE_TIMEOUT_MS / 1000}s`);
+  console.log(`✓ Compile Server running on port ${PORT}`);
+  console.log(`  UI: http://localhost:${PORT}`);
+  console.log(`  Health: http://localhost:${PORT}/health`);
 });
