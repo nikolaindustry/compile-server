@@ -22,7 +22,6 @@ const app = express();
 // ───────────────────────────────────────────────────────────────
 
 const COMPILE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
-const PARTITIONS_DIR = join(__dirname, 'partitions');
 
 // Supabase client (optional - for binary upload)
 const supabase = process.env.SUPABASE_URL ? createClient(
@@ -91,8 +90,30 @@ async function processQueue() {
   }
 }
 
+// Map frontend partition display names to arduino-cli FQBN values
+const PARTITION_MAP = {
+  'Default partition scheme': 'default',
+  'No OTA': 'no_ota',
+  'Minimal SPIFFS': 'min_spiffs',
+  'Huge App': 'huge_app',
+  'default': 'default',
+  'no_ota': 'no_ota',
+  'min_spiffs': 'min_spiffs',
+  'huge_app': 'huge_app'
+};
+
 async function compile(job) {
-  const { source, board = 'esp32:esp32:esp32', productId, version = '1.0.0', libraries = [], customLibs = [] } = job.data;
+  const {
+    source,
+    board = 'esp32:esp32:esp32',
+    productId,
+    version = '1.0.0',
+    libraries = [],
+    customLibs = [],
+    partitionScheme = 'default',
+    flashFreq = '80m',
+    eraseFlash = false
+  } = job.data;
   
   const sketchDir = `/tmp/job_${job.id}`;
   const sketchName = 'sketch';
@@ -118,14 +139,10 @@ async function compile(job) {
       update(job.id, { progress: 12 });
       for (const gitUrl of gitLibs) {
         try {
-          // Extract repo name from URL
           const repoName = gitUrl.replace(/\.git$/, '').split('/').pop() || 'custom-lib';
           const clonePath = `${customLibDir}/${repoName}`;
-          
           log(job.id, `Cloning: ${gitUrl}`);
           await execPromise(`git clone --depth 1 "${gitUrl}" "${clonePath}"`, { timeout: 60000 });
-          
-          // Verify it has library structure (src/ with .h or root .h)
           const hasSrc = existsSync(`${clonePath}/src`);
           const hasLib = existsSync(`${clonePath}/library.properties`);
           log(job.id, `Cloned: ${repoName} (${hasSrc ? 'src/' : 'flat'} layout${hasLib ? ', has library.properties' : ''})`);
@@ -163,17 +180,20 @@ async function compile(job) {
     log(job.id, 'Source code written');
     update(job.id, { progress: 30 });
 
-    // Copy partition table
-    const partitionFile = join(PARTITIONS_DIR, 'min_spiffs.csv');
-    if (existsSync(partitionFile)) {
-      writeFileSync(`${sketchDir}/${sketchName}/partitions.csv`, readFileSync(partitionFile));
-      log(job.id, 'Partition table configured');
-    }
     update(job.id, { progress: 40 });
 
-    // Compile
+    // ── Build FQBN with board options ──────────────────
+    const fqbnPartition = PARTITION_MAP[partitionScheme] || 'default';
+    const boardOptions = [
+      `PartitionScheme=${fqbnPartition}`,
+      `FlashFreq=${flashFreq || '80m'}`
+    ].join(',');
+    const fullFqbn = `${board}:${boardOptions}`;
+    log(job.id, `Board: ${fullFqbn}`);
+    log(job.id, `Partition: ${partitionScheme} → ${fqbnPartition}, Flash: ${flashFreq}, Erase: ${eraseFlash}`);
+
+    // ── Build compile command ──────────────────────────
     log(job.id, 'Running compiler...');
-    // Build library paths: pre-baked + newly installed + custom git repos
     let libraryFlags = `--libraries ${libPath}`;
     if (libList.length > 0 && existsSync('/root/Arduino/libraries')) {
       libraryFlags += ' --libraries /root/Arduino/libraries';
@@ -181,7 +201,9 @@ async function compile(job) {
     if (gitLibs.length > 0) {
       libraryFlags += ` --libraries ${customLibDir}`;
     }
-    const cmd = `arduino-cli compile --fqbn ${board} ${libraryFlags} --output-dir ${buildDir} ${sketchDir}/${sketchName}`;
+
+    const cleanFlag = eraseFlash ? ' --clean' : '';
+    const cmd = `arduino-cli compile --fqbn "${fullFqbn}" ${libraryFlags}${cleanFlag} --output-dir ${buildDir} ${sketchDir}/${sketchName}`;
     
     const { stdout, stderr } = await execPromise(cmd, { timeout: COMPILE_TIMEOUT });
     
@@ -271,7 +293,7 @@ app.get('/health', (req, res) => {
 
 // Submit compile job
 app.post('/compile', (req, res) => {
-  const { source, productId = 'test', version, board, libraries, customLibs } = req.body;
+  const { source, productId = 'test', version, board, libraries, customLibs, partitionScheme, flashFreq, eraseFlash } = req.body;
   
   if (!source) {
     return res.status(400).json({ error: 'source is required' });
