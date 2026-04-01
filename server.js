@@ -270,7 +270,18 @@ function resolveLibraryVersions(libraries) {
   });
 }
 
-function installLibrary(libSpec) {
+async function installLibrary(libSpec) {
+  const libName = libSpec.split('@')[0].trim();
+  
+  // If version is specified, uninstall existing first to ensure correct version
+  if (libSpec.includes('@')) {
+    try {
+      await execPromise(`arduino-cli lib uninstall "${libName}"`, { timeout: 30000 });
+    } catch (e) {
+      // Ignore if not installed
+    }
+  }
+  
   return execPromise(`arduino-cli lib install "${libSpec}"`, { timeout: 60000 });
 }
 
