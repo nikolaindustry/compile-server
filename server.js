@@ -92,19 +92,39 @@ async function processQueue() {
 }
 
 async function compile(job) {
-  const { source, board = 'esp32:esp32:esp32', productId, version = '1.0.0' } = job.data;
+  const { source, board = 'esp32:esp32:esp32', productId, version = '1.0.0', libraries = [] } = job.data;
   
   const sketchDir = `/tmp/job_${job.id}`;
   const sketchName = 'sketch';
   const buildDir = `${sketchDir}/build`;
+  const libPath = existsSync('/root/Arduino/libraries') ? '/root/Arduino/libraries' : '/opt/arduino-libraries';
 
   log(job.id, 'Starting compilation...');
-  update(job.id, { progress: 20 });
+  update(job.id, { progress: 10 });
 
   try {
     // Create directories
     mkdirSync(`${sketchDir}/${sketchName}`, { recursive: true });
     mkdirSync(buildDir, { recursive: true });
+
+    // Install additional libraries if requested
+    const libList = Array.isArray(libraries) ? libraries : 
+      (typeof libraries === 'string' && libraries.trim() ? libraries.split(',').map(l => l.trim()).filter(Boolean) : []);
+    
+    if (libList.length > 0) {
+      log(job.id, `Installing ${libList.length} additional libraries...`);
+      update(job.id, { progress: 15 });
+      for (const lib of libList) {
+        try {
+          log(job.id, `Installing: ${lib}`);
+          await execPromise(`arduino-cli lib install "${lib}"`, { timeout: 60000 });
+          log(job.id, `Installed: ${lib}`);
+        } catch (e) {
+          log(job.id, `Warning: Could not install "${lib}": ${e.message}`);
+        }
+      }
+    }
+    update(job.id, { progress: 20 });
 
     // Write source code
     const cleanSource = source
@@ -125,34 +145,6 @@ async function compile(job) {
 
     // Compile
     log(job.id, 'Running compiler...');
-
-    // Debug: verify libraries are visible
-    try {
-      const { stdout: whoami } = await execPromise('whoami 2>&1', { timeout: 5000 });
-      const { stdout: homeDir } = await execPromise('echo $HOME 2>&1', { timeout: 5000 });
-      log(job.id, `Running as: ${whoami.trim()}, HOME: ${homeDir.trim()}`);
-    } catch (e) {
-      log(job.id, `whoami error: ${e.message}`);
-    }
-    try {
-      const { stdout: libList } = await execPromise('arduino-cli lib list 2>&1', { timeout: 10000 });
-      log(job.id, `Installed libs:\n${libList}`);
-    } catch (e) {
-      log(job.id, `lib list: ${e.message}`);
-    }
-    // Check both library locations
-    for (const dir of ['/root/Arduino/libraries', '/opt/arduino-libraries', `${process.env.HOME}/Arduino/libraries`]) {
-      try {
-        const { stdout } = await execPromise(`ls ${dir}/ 2>&1`, { timeout: 5000 });
-        log(job.id, `${dir}: ${stdout.trim().split('\n').length} items`);
-      } catch (e) {
-        log(job.id, `${dir}: NOT FOUND`);
-      }
-    }
-
-    // Use --libraries flag to explicitly tell compiler where libraries are
-    const libPath = existsSync('/root/Arduino/libraries') ? '/root/Arduino/libraries' : '/opt/arduino-libraries';
-    log(job.id, `Using library path: ${libPath}`);
     const cmd = `arduino-cli compile --fqbn ${board} --libraries ${libPath} --output-dir ${buildDir} ${sketchDir}/${sketchName}`;
     
     const { stdout, stderr } = await execPromise(cmd, { timeout: COMPILE_TIMEOUT });
@@ -243,7 +235,7 @@ app.get('/health', (req, res) => {
 
 // Submit compile job
 app.post('/compile', (req, res) => {
-  const { source, productId = 'test', version, board } = req.body;
+  const { source, productId = 'test', version, board, libraries } = req.body;
   
   if (!source) {
     return res.status(400).json({ error: 'source is required' });
@@ -287,29 +279,12 @@ setInterval(() => {
 // ───────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
   console.log(`\u2713 Compile Server running on port ${PORT}`);
   console.log(`  UI: http://localhost:${PORT}`);
   console.log(`  Health: http://localhost:${PORT}/health`);
   
   // Startup diagnostics
-  try {
-    const { stdout: whoami } = await execPromise('whoami 2>&1', { timeout: 5000 });
-    const { stdout: home } = await execPromise('echo $HOME 2>&1', { timeout: 5000 });
-    console.log(`Running as: ${whoami.trim()}, HOME: ${home.trim()}`);
-  } catch (e) {}
-  for (const dir of ['/root/Arduino/libraries', '/opt/arduino-libraries']) {
-    try {
-      const { stdout } = await execPromise(`ls ${dir}/ 2>&1`, { timeout: 5000 });
-      console.log(`${dir}: ${stdout.trim().split('\n').length} libraries found`);
-    } catch (e) {
-      console.log(`${dir}: NOT FOUND`);
-    }
-  }
-  try {
-    const { stdout } = await execPromise('arduino-cli lib list 2>&1', { timeout: 10000 });
-    console.log(`\n=== arduino-cli lib list ===\n${stdout}`);
-  } catch (e) {
-    console.log(`WARNING: arduino-cli lib list: ${e.message}`);
-  }
+  const libPath = existsSync('/root/Arduino/libraries') ? '/root/Arduino/libraries' : '/opt/arduino-libraries';
+  console.log(`  Libraries: ${libPath}`);
 });

@@ -295,12 +295,12 @@ void loop() {
               </div>
 
               <div className="form-group">
-                <label>Libraries (comma separated)</label>
+                <label>Additional Libraries (comma separated, optional)</label>
                 <input 
                   type="text" 
                   value={libraries} 
                   onChange={(e) => setLibraries(e.target.value)}
-                  placeholder="WebSockets, ArduinoJson, etc."
+                  placeholder="e.g. DHT sensor library, Servo (29 pre-installed)"
                 />
               </div>
 
