@@ -90,8 +90,12 @@ serve(async (req) => {
           success: true,
           jobId,
           binUrl: jobStatus.result.binUrl,
+          bootloaderUrl: jobStatus.result.bootloaderUrl,
+          partitionsUrl: jobStatus.result.partitionsUrl,
           sizeBytes: jobStatus.result.sizeBytes,
           compiledAt: jobStatus.result.compiledAt,
+          eraseFlash: jobStatus.result.eraseFlash,
+          flashOffsets: jobStatus.result.flashOffsets,
           version,
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },

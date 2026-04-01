@@ -211,14 +211,26 @@ async function compile(job) {
     log(job.id, 'Compilation successful!');
     update(job.id, { progress: 80 });
 
-    // Read binary
+    // Read binary files
     const binPath = `${buildDir}/${sketchName}.ino.bin`;
+    const bootloaderPath = `${buildDir}/${sketchName}.ino.bootloader.bin`;
+    const partitionsPath = `${buildDir}/${sketchName}.ino.partitions.bin`;
+    
     const binBuffer = readFileSync(binPath);
+    const hasBootloader = existsSync(bootloaderPath);
+    const hasPartitions = existsSync(partitionsPath);
+    
+    log(job.id, `Build artifacts: app=${binBuffer.length}B, bootloader=${hasBootloader}, partitions=${hasPartitions}`);
 
     // Upload to Supabase (if configured)
     let binUrl = null;
+    let bootloaderUrl = null;
+    let partitionsUrl = null;
+    const timestamp = Date.now();
+
     if (supabase && productId) {
-      const storagePath = `${productId}/${version}_${Date.now()}.bin`;
+      // Upload app binary
+      const storagePath = `${productId}/${version}_${timestamp}.bin`;
       const { error: uploadError } = await supabase.storage
         .from('firmware')
         .upload(storagePath, binBuffer, { contentType: 'application/octet-stream' });
@@ -226,7 +238,35 @@ async function compile(job) {
       if (!uploadError) {
         const { data } = supabase.storage.from('firmware').getPublicUrl(storagePath);
         binUrl = data.publicUrl;
-        log(job.id, 'Binary uploaded to storage');
+        log(job.id, 'App binary uploaded');
+      }
+
+      // Upload bootloader
+      if (hasBootloader) {
+        const blBuffer = readFileSync(bootloaderPath);
+        const blPath = `${productId}/${version}_${timestamp}_bootloader.bin`;
+        const { error: blError } = await supabase.storage
+          .from('firmware')
+          .upload(blPath, blBuffer, { contentType: 'application/octet-stream' });
+        if (!blError) {
+          const { data } = supabase.storage.from('firmware').getPublicUrl(blPath);
+          bootloaderUrl = data.publicUrl;
+          log(job.id, 'Bootloader uploaded');
+        }
+      }
+
+      // Upload partition table
+      if (hasPartitions) {
+        const ptBuffer = readFileSync(partitionsPath);
+        const ptPath = `${productId}/${version}_${timestamp}_partitions.bin`;
+        const { error: ptError } = await supabase.storage
+          .from('firmware')
+          .upload(ptPath, ptBuffer, { contentType: 'application/octet-stream' });
+        if (!ptError) {
+          const { data } = supabase.storage.from('firmware').getPublicUrl(ptPath);
+          partitionsUrl = data.publicUrl;
+          log(job.id, 'Partition table uploaded');
+        }
       }
     }
     
@@ -240,9 +280,17 @@ async function compile(job) {
       status: 'completed',
       result: {
         binUrl,
+        bootloaderUrl,
+        partitionsUrl,
         sizeBytes: binBuffer.length,
         compiledAt: new Date().toISOString(),
-        eraseFlash: !!eraseFlash  // Pass back to frontend for flash step
+        eraseFlash: !!eraseFlash,
+        // Flash offsets for USB serial flash with erase
+        flashOffsets: {
+          bootloader: '0x1000',
+          partitions: '0x8000',
+          app: '0x10000'
+        }
       }
     });
 
