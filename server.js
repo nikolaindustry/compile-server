@@ -161,10 +161,11 @@ async function compileJob(job) {
     addJobLog(job.id, 'Source code written');
     updateJob(job.id, { progress: 30 });
 
-    // Clear library cache to ensure fresh installs
+    // Clear library cache to ensure fresh installs (but keep bundled libraries)
     addJobLog(job.id, 'Clearing library cache...');
     try {
-      execSync('rm -rf /root/Arduino/libraries/*', { stdio: 'ignore' });
+      // Only remove libraries that were installed by arduino-cli (not bundled)
+      execSync('find /root/Arduino/libraries -maxdepth 1 -type d ! -name "hyperwisor-iot" -exec rm -rf {} + 2>/dev/null || true', { stdio: 'ignore', shell: true });
     } catch (e) {}
 
     // Install libraries (with version pinning for compatibility)

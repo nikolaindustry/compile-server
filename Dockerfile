@@ -36,6 +36,7 @@ RUN npm install --omit=dev
 COPY server.js .
 COPY partitions/ ./partitions/
 COPY public/ ./public/
+COPY libraries/ /root/Arduino/libraries/
 
 EXPOSE 3000
 
