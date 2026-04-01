@@ -11,6 +11,7 @@ import { writeFileSync, mkdirSync, rmSync, readFileSync, existsSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 
