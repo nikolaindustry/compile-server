@@ -35,6 +35,7 @@ RUN npm install --omit=dev
 # Copy app files
 COPY server.js .
 COPY partitions/ ./partitions/
+COPY public/ ./public/
 
 EXPOSE 3000
 
