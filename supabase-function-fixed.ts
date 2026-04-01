@@ -6,9 +6,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const COMPILE_SERVER_URL = Deno.env.get('COMPILE_SERVER_URL');
-const COMPILE_SECRET = Deno.env.get('COMPILE_SERVER_SECRET');
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -24,76 +21,110 @@ serve(async (req) => {
     const { source, productId, version = '1.0.0' } = body;
 
     if (!source || !productId) {
-      return new Response(JSON.stringify({ error: 'source and productId required' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      return new Response(JSON.stringify({ error: 'source and productId are required' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Step 1: Submit compile job
-    const submitRes = await fetch(`${COMPILE_SERVER_URL}/compile`, {
+    const COMPILE_SERVER_URL = Deno.env.get('COMPILE_SERVER_URL');
+    const COMPILE_SECRET = Deno.env.get('COMPILE_SERVER_SECRET');
+
+    if (!COMPILE_SERVER_URL || !COMPILE_SECRET) {
+      return new Response(JSON.stringify({ error: 'Compile server not configured. Set COMPILE_SERVER_URL and COMPILE_SERVER_SECRET in Supabase secrets.' }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ── Step 1: Submit compile job ──────────────────────
+    // Forward entire request body (source, productId, version, board,
+    // libraries, customLibs, partitionScheme, flashFreq, eraseFlash)
+    const compileRes = await fetch(`${COMPILE_SERVER_URL}/compile`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-hyperwisor-token': COMPILE_SECRET,
+        'X-Hyperwisor-Token': COMPILE_SECRET,
       },
       body: JSON.stringify(body),
     });
 
-    const submitData = await submitRes.json();
-    if (!submitRes.ok || !submitData.success) {
-      throw new Error(submitData.error || 'Failed to submit job');
+    const compileData = await compileRes.json();
+
+    if (!compileRes.ok || !compileData.success) {
+      return new Response(JSON.stringify({ error: compileData.error || 'Failed to submit compile job' }), {
+        status: compileRes.status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    const jobId = submitData.jobId;
+    const jobId = compileData.jobId;
 
-    // Step 2: Poll for completion (max 5 min)
-    const maxWait = 5 * 60 * 1000;
-    const pollInterval = 2000;
+    // ── Step 2: Poll for completion ─────────────────────
+    // The compile server uses an async job queue.
+    // We poll GET /jobs/:id every 3 seconds until done or timeout.
+    const MAX_WAIT_MS = 4 * 60 * 1000; // 4 minutes max
+    const POLL_INTERVAL_MS = 3000;
     const startTime = Date.now();
 
-    while (Date.now() - startTime < maxWait) {
-      await new Promise(r => setTimeout(r, pollInterval));
-      
-      const statusRes = await fetch(`${COMPILE_SERVER_URL}/jobs/${jobId}`, {
-        headers: { 'x-hyperwisor-token': COMPILE_SECRET }
-      });
-      
-      if (!statusRes.ok) continue;
-      const status = await statusRes.json();
+    while (Date.now() - startTime < MAX_WAIT_MS) {
+      await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
 
-      if (status.status === 'completed') {
-        // Save to firmware_versions
+      const statusRes = await fetch(`${COMPILE_SERVER_URL}/jobs/${jobId}`, {
+        headers: { 'X-Hyperwisor-Token': COMPILE_SECRET },
+      });
+
+      if (!statusRes.ok) continue;
+      const jobStatus = await statusRes.json();
+
+      if (jobStatus.status === 'completed') {
+        // ── Step 3: Save firmware version to database ───
         await supabase.from('firmware_versions').update({ is_latest: false }).eq('product_id', productId);
         await supabase.from('firmware_versions').insert({
           product_id: productId,
           version,
-          download_url: status.result.binUrl,
-          description: `Compiled ${new Date().toISOString()}`,
+          download_url: jobStatus.result.binUrl,
+          description: `Web IDE compiled — ${new Date().toISOString()}`,
           is_latest: true,
         });
 
         return new Response(JSON.stringify({
           success: true,
-          binUrl: status.result.binUrl,
-          sizeBytes: status.result.sizeBytes,
-        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          jobId,
+          binUrl: jobStatus.result.binUrl,
+          sizeBytes: jobStatus.result.sizeBytes,
+          compiledAt: jobStatus.result.compiledAt,
+          version,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
 
-      if (status.status === 'failed') {
+      if (jobStatus.status === 'failed') {
         return new Response(JSON.stringify({
           success: false,
-          error: status.error,
-        }), { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          error: jobStatus.error || 'Compilation failed',
+        }), {
+          status: 422,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
+
+      // Still compiling — continue polling
     }
 
-    return new Response(JSON.stringify({ error: 'Compilation timeout' }), {
-      status: 504, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    // Timeout
+    return new Response(JSON.stringify({
+      error: 'Compilation timed out. The job may still be running.',
+      jobId,
+      pollUrl: `${COMPILE_SERVER_URL}/jobs/${jobId}`,
+    }), {
+      status: 504,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    console.error('compile-firmware error:', error);
+    return new Response(JSON.stringify({ error: error.message || 'Compilation failed' }), {
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });

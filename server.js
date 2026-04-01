@@ -184,13 +184,15 @@ async function compile(job) {
 
     // ── Build FQBN with board options ──────────────────
     const fqbnPartition = PARTITION_MAP[partitionScheme] || 'default';
+    // Strip 'm', 'MHz' etc — ESP32 core expects just the number (e.g. '80' not '80m')
+    const cleanFlashFreq = String(flashFreq || '80').replace(/[^0-9]/g, '') || '80';
     const boardOptions = [
       `PartitionScheme=${fqbnPartition}`,
-      `FlashFreq=${flashFreq || '80m'}`
+      `FlashFreq=${cleanFlashFreq}`
     ].join(',');
     const fullFqbn = `${board}:${boardOptions}`;
     log(job.id, `Board: ${fullFqbn}`);
-    log(job.id, `Partition: ${partitionScheme} → ${fqbnPartition}, Flash: ${flashFreq}, Erase: ${eraseFlash}`);
+    log(job.id, `Partition: ${partitionScheme} → ${fqbnPartition}, Flash: ${cleanFlashFreq}MHz, Erase: ${eraseFlash}`);
 
     // ── Build compile command ──────────────────────────
     log(job.id, 'Running compiler...');
