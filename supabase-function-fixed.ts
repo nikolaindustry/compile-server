@@ -92,9 +92,9 @@ serve(async (req) => {
           binUrl: jobStatus.result.binUrl,
           bootloaderUrl: jobStatus.result.bootloaderUrl,
           partitionsUrl: jobStatus.result.partitionsUrl,
+          bootApp0Url: jobStatus.result.bootApp0Url,
           sizeBytes: jobStatus.result.sizeBytes,
           compiledAt: jobStatus.result.compiledAt,
-          eraseFlash: jobStatus.result.eraseFlash,
           flashOffsets: jobStatus.result.flashOffsets,
           version,
         }), {

@@ -216,16 +216,27 @@ async function compile(job) {
     const bootloaderPath = `${buildDir}/${sketchName}.ino.bootloader.bin`;
     const partitionsPath = `${buildDir}/${sketchName}.ino.partitions.bin`;
     
+    // boot_app0.bin is a static file from ESP32 core — required for full flash
+    // It initializes the OTA data partition so the bootloader knows which app to boot
+    const bootApp0Candidates = [
+      '/root/.arduino15/packages/esp32/hardware/esp32/3.3.7/tools/partitions/boot_app0.bin',
+      '/root/.arduino15/packages/esp32/hardware/esp32/3.0.7/tools/partitions/boot_app0.bin',
+      '/root/.arduino15/packages/esp32/hardware/esp32/2.0.17/tools/partitions/boot_app0.bin'
+    ];
+    const bootApp0Path = bootApp0Candidates.find(p => existsSync(p)) || null;
+    
     const binBuffer = readFileSync(binPath);
     const hasBootloader = existsSync(bootloaderPath);
     const hasPartitions = existsSync(partitionsPath);
+    const hasBootApp0 = !!bootApp0Path;
     
-    log(job.id, `Build artifacts: app=${binBuffer.length}B, bootloader=${hasBootloader}, partitions=${hasPartitions}`);
+    log(job.id, `Build artifacts: app=${binBuffer.length}B, bootloader=${hasBootloader}, partitions=${hasPartitions}, boot_app0=${hasBootApp0}`);
 
     // Upload to Supabase (if configured)
     let binUrl = null;
     let bootloaderUrl = null;
     let partitionsUrl = null;
+    let bootApp0Url = null;
     const timestamp = Date.now();
 
     if (supabase && productId) {
@@ -268,6 +279,20 @@ async function compile(job) {
           log(job.id, 'Partition table uploaded');
         }
       }
+
+      // Upload boot_app0.bin (OTA data init — required for full flash)
+      if (hasBootApp0) {
+        const ba0Buffer = readFileSync(bootApp0Path);
+        const ba0Path = `${productId}/${version}_${timestamp}_boot_app0.bin`;
+        const { error: ba0Error } = await supabase.storage
+          .from('firmware')
+          .upload(ba0Path, ba0Buffer, { contentType: 'application/octet-stream' });
+        if (!ba0Error) {
+          const { data } = supabase.storage.from('firmware').getPublicUrl(ba0Path);
+          bootApp0Url = data.publicUrl;
+          log(job.id, 'boot_app0.bin uploaded');
+        }
+      }
     }
     
     update(job.id, { progress: 100 });
@@ -282,13 +307,15 @@ async function compile(job) {
         binUrl,
         bootloaderUrl,
         partitionsUrl,
+        bootApp0Url,
         sizeBytes: binBuffer.length,
         compiledAt: new Date().toISOString(),
-        eraseFlash: !!eraseFlash,
         // Flash offsets for USB serial flash with erase
+        // All 4 files must be flashed for a complete erase+flash
         flashOffsets: {
           bootloader: '0x1000',
           partitions: '0x8000',
+          bootApp0: '0xe000',
           app: '0x10000'
         }
       }
