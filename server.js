@@ -111,8 +111,7 @@ async function compile(job) {
     libraries = [],
     customLibs = [],
     partitionScheme = 'default',
-    flashFreq = '80m',
-    eraseFlash = false
+    flashFreq = '80',
   } = job.data;
   
   const sketchDir = `/tmp/job_${job.id}`;
@@ -130,9 +129,15 @@ async function compile(job) {
     mkdirSync(buildDir, { recursive: true });
     mkdirSync(customLibDir, { recursive: true });
 
-    // Clone custom Git libraries if provided
+    // Parse and validate custom Git library URLs
     const gitLibs = Array.isArray(customLibs) ? customLibs :
       (typeof customLibs === 'string' && customLibs.trim() ? customLibs.split(',').map(l => l.trim()).filter(Boolean) : []);
+    const gitUrlPattern = /^https?:\/\/.+\/.+/;
+    for (const url of gitLibs) {
+      if (!gitUrlPattern.test(url)) {
+        throw new Error(`Invalid Git URL: ${url}`);
+      }
+    }
     
     if (gitLibs.length > 0) {
       log(job.id, `Cloning ${gitLibs.length} custom Git libraries...`);
@@ -192,7 +197,7 @@ async function compile(job) {
     ].join(',');
     const fullFqbn = `${board}:${boardOptions}`;
     log(job.id, `Board: ${fullFqbn}`);
-    log(job.id, `Partition: ${partitionScheme} → ${fqbnPartition}, Flash: ${cleanFlashFreq}MHz, Erase: ${eraseFlash}`);
+    log(job.id, `Partition: ${partitionScheme} → ${fqbnPartition}, Flash: ${cleanFlashFreq}MHz`);
 
     // ── Build compile command ──────────────────────────
     log(job.id, 'Running compiler...');
@@ -350,7 +355,7 @@ app.use(express.static(join(__dirname, 'public')));
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Hyperwisor-Token, Authorization');
   if (req.method === 'OPTIONS') return res.status(204).end();
   next();
 });
@@ -370,7 +375,7 @@ app.get('/health', (req, res) => {
 
 // Submit compile job
 app.post('/compile', (req, res) => {
-  const { source, productId = 'test', version, board, libraries, customLibs, partitionScheme, flashFreq, eraseFlash } = req.body;
+  const { source, productId = 'test', version, board, libraries, customLibs, partitionScheme, flashFreq } = req.body;
   
   if (!source) {
     return res.status(400).json({ error: 'source is required' });
